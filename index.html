@@ -288,7 +288,10 @@ const STARTERS = [
 ];
 
 function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
-function fmt(s){ try { return DOMPurify.sanitize(marked.parse(s)); } catch { return esc(s); } }
+function fmt(s){
+  // نعرض بس الصور اللي رسمها يار فعلاً (مخزونة عدنا)، ونشيل أي رابط صورة يكتبه الذكاء من راسه
+  s = String(s).replace(/!\[[^\]]*\]\((?![^)]*wnjhsgjctevpaftvlcyr\.supabase\.co\/storage)[^)]*\)/g, "");
+  try { return DOMPurify.sanitize(marked.parse(s)); } catch { return esc(s); } }
 
 let CATS = [], curCat = "general", PROF = {};
 const catOf = id => CATS.find(c=>c.id===id) || { id:"general", name:"عام", icon:"💬", starters:[], blurb:"" };
