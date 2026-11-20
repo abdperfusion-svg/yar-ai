@@ -98,6 +98,8 @@ main.empty .topbar{position:absolute;top:0;inset-inline:0}
 .shimmer{background:linear-gradient(90deg,var(--dim) 0%,var(--text) 50%,var(--dim) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 1.6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}@keyframes sh{from{background-position:200% 0}to{background-position:-200% 0}}
 .err{color:#fca5a5}
+.body img{max-width:100%;border-radius:16px;margin:8px 0;display:block;background:var(--panel2);min-height:120px}
+.catchip.on{background:linear-gradient(120deg,rgba(139,92,246,.25),rgba(236,72,153,.25));border-color:var(--a2);color:var(--text)}
 /* صندوق الكتابة */
 form#composer{padding:0 16px calc(12px + env(safe-area-inset-bottom))}
 .box{max-width:760px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:26px;padding:12px 14px 10px;transition:border-color .2s;box-shadow:0 8px 30px rgba(0,0,0,.25)}
@@ -237,6 +239,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
         <div class="box-row">
           <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span style="font-size:10px">▾</span>
             <div class="catmenu" id="catMenu"></div></button>
+          <button type="button" class="catchip" id="imgBtn" style="margin-inline-end:auto;margin-inline-start:6px">🎨 صورة</button>
           <button class="send" id="sendBtn" type="submit" aria-label="إرسال">↑</button>
         </div>
       </div>
@@ -258,7 +261,7 @@ const SUPABASE_URL = "https://wnjhsgjctevpaftvlcyr.supabase.co";
 const SUPABASE_KEY = "sb_publishable_qKc7vKrYAyUe0trChcVZuA_p-bBSubV";
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
-let signup = false, convId = null, busy = false;
+let signup = false, convId = null, busy = false, imgMode = false;
 
 const STARTERS = [
   ["✍️ كابشن إعلان", "اكتبلي كابشن انستغرام لعرض الجمعة السوداء لصيدلية، باللهجة العراقية وقصير وجذاب"],
@@ -308,6 +311,8 @@ function addCopy(d, text){
   const [cp, pdf] = t.querySelectorAll("button");
   cp.onclick = async () => { try { await navigator.clipboard.writeText(text); cp.textContent = "✓ انسخ"; setTimeout(()=>cp.textContent="⧉ نسخ",1500); } catch {} };
   pdf.onclick = () => makePdf(text);
+  const im = text.match(/!\[[^\]]*\]\((\S+?)\)/);
+  if (im) { const a = document.createElement("a"); a.href = im[1]; a.target = "_blank"; a.rel = "noopener"; a.innerHTML = `<button>🖼️ افتح الصورة</button>`; t.appendChild(a); }
   d.querySelector(".col").appendChild(t);
 }
 
@@ -324,6 +329,11 @@ function makePdf(text){
 function closeSide(){ $("side").classList.remove("open"); $("scrim").classList.remove("open"); }
 $("menuBtn").onclick = () => { $("side").classList.add("open"); $("scrim").classList.add("open"); };
 $("scrim").onclick = closeSide;
+$("imgBtn").onclick = () => {
+  imgMode = !imgMode; $("imgBtn").classList.toggle("on", imgMode);
+  $("input").placeholder = imgMode ? "اوصف الصورة اللي تريدها… مثلاً: بوستر لصيدلية بألوان خضراء ويا بنت كردية" : "اسأل يار أي شي…";
+  $("input").focus();
+};
 $("catBtn").onclick = e => { e.stopPropagation(); $("catMenu").classList.toggle("open"); };
 $("meBtn").onclick = e => { e.stopPropagation(); $("meMenu").classList.toggle("open"); };
 document.addEventListener("click", () => { $("catMenu").classList.remove("open"); $("meMenu").classList.remove("open"); });
@@ -354,9 +364,9 @@ async function send(){
   if (!text || busy) return;
   busy = true; $("sendBtn").disabled = true; $("input").value = ""; autosize();
   bubble("user", text);
-  const pending = bubble("ai", null);
+  const pending = bubble("ai", null); if (imgMode) pending.querySelector(".shimmer").textContent = "يار يرسم الصورة… (تاخذ ثواني)";
   try {
-    const { data, error } = await sb.functions.invoke("chat", { body: { conversation_id: convId, message: text, category: curCat } });
+    const { data, error } = await sb.functions.invoke(imgMode ? "image" : "chat", { body: { conversation_id: convId, message: text, category: curCat } });
     let reply, err, upgrade = false;
     if (error) { try { const j = await error.context.json(); err = j.error; upgrade = !!j.upgrade; } catch { err = "صار خلل بالاتصال، جرّب مرة ثانية"; } }
     else reply = data.reply;
@@ -369,6 +379,7 @@ async function send(){
       body.innerHTML = fmt(reply); addCopy(pending, reply);
       const isNew = !convId; convId = data.conversation_id; saveConv();
       if (typeof data.remaining === "number") $("remain").textContent = `باقي اليوم ${data.remaining} رسالة ·`;
+      if (typeof data.remaining_images === "number") $("remain").textContent = `باقي اليوم ${data.remaining_images} صور ·`;
       if (isNew) loadConvs();
     }
   } finally { busy = false; $("sendBtn").disabled = false; $("chat").scrollTop = $("chat").scrollHeight; }
