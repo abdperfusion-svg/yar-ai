@@ -1,0 +1,16 @@
+{
+  "name": "YAR AI — يار",
+  "short_name": "YAR AI",
+  "description": "ذكاء اصطناعي عراقي يحچي بلهجتك ويساعدك بكل شغلك",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/yar-ai/",
+  "scope": "/yar-ai/",
+  "display": "standalone",
+  "background_color": "#131314",
+  "theme_color": "#131314",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

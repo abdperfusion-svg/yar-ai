@@ -28,21 +28,25 @@ const EXTRACTOR = `استخرج من آخر رسالة للمستخدم معلو
 لا تكرر شي موجود بالقائمة الحالية. إذا معلومة جديدة تصحح قديمة، حط القديمة بـ remove.
 رجّع JSON فقط بهذا الشكل: {"add":["جملة قصيرة"],"remove":["نص المعلومة القديمة حرفياً"]}`;
 
-async function gemini(system: string, contents: unknown[], jsonOut = false) {
+let LAST_SOURCES: { uri: string; title: string }[] = [];
+async function gemini(system: string, contents: unknown[], jsonOut = false, search = false) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("NO_KEY");
   let lastErr = "";
-  for (const model of MODELS) {
+  const tries = MODELS.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
+  for (const [model, useSearch] of tries) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] }, contents,
+        ...(useSearch ? { tools: [{ google_search: {} }] } : {}),
         generationConfig: { temperature: jsonOut ? 0.1 : 0.6, ...(jsonOut ? { responseMimeType: "application/json" } : {}) },
       }),
     });
     if (r.ok) {
       const j = await r.json();
+      if (useSearch) LAST_SOURCES = (j?.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []).map((c: { web?: { uri: string; title: string } }) => c.web).filter(Boolean).slice(0, 5);
       const t = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
       if (t.trim()) return t;
       lastErr = "empty";
@@ -95,9 +99,9 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "سجّل دخول أول" }, 401);
 
-    const { conversation_id, message, category } = await req.json();
+    const { conversation_id, message, category, files } = await req.json();
     const text = String(message ?? "").trim().slice(0, 12000);
-    if (!text) return json({ error: "الرسالة فارغة" }, 400);
+    if (!text && !(Array.isArray(files) && files.length)) return json({ error: "الرسالة فارغة" }, 400);
 
     const { data: planId } = await admin.rpc("effective_plan", { p_user: user.id });
     const { data: plan } = await admin.from("plans").select("*").eq("id", planId ?? "free").single();
@@ -111,7 +115,7 @@ Deno.serve(async (req) => {
     if (!convId) {
       const { data: okCat } = await admin.from("categories").select("id").eq("id", category ?? "general").maybeSingle();
       cat = okCat?.id ?? "general";
-      const { data: c } = await admin.from("conversations").insert({ user_id: user.id, title: text.slice(0, 40), category: cat }).select("id").single();
+      const { data: c } = await admin.from("conversations").insert({ user_id: user.id, title: (text || "📎 ملف").slice(0, 40), category: cat }).select("id").single();
       convId = c!.id;
     } else {
       const { data: c } = await admin.from("conversations").select("id,category,summary").eq("id", convId).eq("user_id", user.id).maybeSingle();
@@ -137,9 +141,12 @@ Deno.serve(async (req) => {
     if (summary) system += `\n\nملخص بداية هذي المحادثة:\n${summary}`;
 
     const contents = (hist ?? []).reverse().map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-    contents.push({ role: "user", parts: [{ text }] });
+    const att = (Array.isArray(files) ? files : []).slice(0, 4).filter((f: { mime?: string; data?: string }) => f?.mime && f?.data && f.data.length < 11_000_000);
+    contents.push({ role: "user", parts: [...att.map((f: { mime: string; data: string }) => ({ inline_data: { mime_type: f.mime, data: f.data } })), { text: text || "حلل هذا الملف" }] });
 
-    const draft = await gemini(system, contents);
+    LAST_SOURCES = [];
+    const draft = await gemini(system + `\n\nتاريخ اليوم: ${new Date().toISOString().slice(0, 10)}. إذا السؤال يحتاج معلومات حديثة (أسعار، أخبار، أحداث، أشياء تتغير) استخدم بحث Google.`, contents, false, true);
+    const sources = LAST_SOURCES;
     let final = draft;
     if (plan?.review) {
       try {
@@ -147,14 +154,16 @@ Deno.serve(async (req) => {
       } catch { final = draft; }
     }
 
+    if (sources.length) final += `\n\n**المصادر:**\n${sources.map((x) => `- [${x.title}](${x.uri})`).join("\n")}`;
+    const shown = att.length ? `📎 ${att.map((f: { name?: string }) => f.name || "ملف").join("، ")}\n${text}` : text;
     await admin.from("messages").insert([
-      { conversation_id: convId, user_id: user.id, role: "user", content: text },
+      { conversation_id: convId, user_id: user.id, role: "user", content: shown },
       { conversation_id: convId, user_id: user.id, role: "assistant", content: final },
     ]);
     await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
 
     // الذاكرة والملخص يشتغلون بالخلفية حتى ما يتأخر الجواب
-    EdgeRuntime.waitUntil(afterReply(admin, user.id, convId, cat, text, mems ?? []));
+    if (text) EdgeRuntime.waitUntil(afterReply(admin, user.id, convId, cat, text, mems ?? []));
 
     return json({ conversation_id: convId, category: cat, reply: final, remaining: limit - (used ?? 0), plan: plan?.id });
   } catch (e) {
