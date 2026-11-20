@@ -230,7 +230,11 @@ Deno.serve(async (req) => {
 
     const contents = (hist ?? []).reverse().map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
     const att = (Array.isArray(files) ? files : []).slice(0, 4).filter((f: { mime?: string; data?: string }) => f?.mime && f?.data && f.data.length < 11_000_000);
-    contents.push({ role: "user", parts: [...att.map((f: { mime: string; data: string }) => ({ inline_data: { mime_type: f.mime, data: f.data } })), { text: text || "حلل هذا الملف" }] });
+    // روابط يوتيوب: Gemini يشوف الفيديو نفسه ويلخصه
+    const yt = [...new Set((text.match(/https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/|live\/)|youtu\.be\/)[\w-]{6,}[^\s]*/g) ?? []))].slice(0, 1);
+    contents.push({ role: "user", parts: [...att.map((f: { mime: string; data: string }) => ({ inline_data: { mime_type: f.mime, data: f.data } })),
+      ...yt.map((u) => ({ file_data: { file_uri: u } })),
+      { text: (text || "حلل هذا الملف") + (yt.length ? "\n\n(شاهد فيديو يوتيوب المرفق. إذا ما طلب شي محدد: لخّصه بنقاط مرتبة، ويا أهم الأفكار والتوقيتات المهمة.)" : "") }] });
 
     // اختيار النموذج: سريع / برو / خبير (الخبير للمشتركين بس)
     const paid = (plan?.id ?? "free") !== "free";
@@ -250,8 +254,8 @@ Deno.serve(async (req) => {
           try { const t = await openrouter(m.trim(), sys, contents); onText?.(t); return t; } catch (e) { console.error("expert", m, String(e)); }
         }
       }
-      if (onText) return await geminiStream(sys, contents, true, gModels, onText);
-      let draft = await gemini(sys, contents, false, true, gModels);
+      if (onText) return await geminiStream(sys, contents, !yt.length, gModels, onText);
+      let draft = await gemini(sys, contents, false, !yt.length, gModels);
       if (plan?.review) {
         try { draft = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `الفئة: ${catRow?.name}\nرسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]); } catch { /* نخلي المسودة */ }
       }
