@@ -439,11 +439,12 @@ async function showSkills(){
   const list = SKILLS.filter(k => skTab === "mine" ? k.owner === uid : skTab === "yar" ? !k.owner : true);
   openModal(`<h3>✨ السكلات</h3><div class="sub">اختار سكل، جاوب على أسئلة قليلة، ويار يسوي الشغلة كاملة بنفس الجودة كل مرة. وتگدر تسوي سكلاتك الخاصة.</div>
     <div class="sktabs"><button data-t="all" class="${skTab==='all'?'on':''}">الكل</button><button data-t="yar" class="${skTab==='yar'?'on':''}">من YAR</button><button data-t="mine" class="${skTab==='mine'?'on':''}">سكلاتي</button></div>
-    <button class="primary" id="newSkill" style="width:auto;padding:8px 16px">+ سكل جديد</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="primary" id="newSkill" style="width:auto;padding:8px 16px">+ سكل جديد</button><button class="primary" id="importSkill" style="width:auto;padding:8px 16px;background:var(--panel);color:var(--text);border:1px solid var(--line)">🔗 جيب سكل من رابط</button></div>
     <div class="sklist">${list.map(k=>`<div class="skcard" data-id="${k.id}">${k.owner===uid?`<span class="mine"><button data-ed="${k.id}">تعديل</button><button data-del="${k.id}">مسح</button></span>`:''}<span class="ic">${esc(k.icon||'✨')}</span><b>${esc(k.name)}</b><small>${esc(k.description||'')}</small></div>`).join("") || '<div class="sub">لهسه ما سويت سكلات. اضغط «+ سكل جديد».</div>'}</div>`);
   const m = $("modalBody");
   m.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { skTab = b.dataset.t; showSkills(); });
   $("newSkill").onclick = () => editSkill(null);
+  $("importSkill").onclick = importSkill;
   m.querySelectorAll("[data-ed]").forEach(b => b.onclick = e => { e.stopPropagation(); editSkill(SKILLS.find(k=>k.id===b.dataset.ed)); });
   m.querySelectorAll("[data-del]").forEach(b => b.onclick = async e => { e.stopPropagation(); if (!confirm("تمسح هذا السكل؟")) return; await sb.from("skills").delete().eq("id", b.dataset.del); if (SKILL?.id === b.dataset.del) { SKILL = null; renderSkillChip(); } showSkills(); });
   m.querySelectorAll(".skcard").forEach(c => c.onclick = () => useSkill(SKILLS.find(k=>k.id===c.dataset.id)));
@@ -463,8 +464,27 @@ function useSkill(k){
     send();
   };
 }
-function editSkill(k){
-  const isNew = !k; k = k || { name:"", icon:"✨", description:"", prompt:"", fields:[], category: curCat };
+// يجيب سكل من أي رابط أو نص منسوخ، يار يحوّله، والمستخدم يراجعه ويحفظه
+function importSkill(){
+  openModal(`<h3>🔗 جيب سكل من رابط</h3><div class="sub">الصق رابط أي سكل (من GitHub أو أي موقع)، أو الصق نص السكل نفسه. يار يقراه ويحوّله لسكل إلك، وإنت تراجعه وتحفظه.</div>
+    <input class="field" id="si_url" dir="ltr" placeholder="https://github.com/...">
+    <div class="sub" style="text-align:center">أو</div>
+    <textarea class="field" id="si_text" rows="5" placeholder="الصق نص السكل أو التعليمات هنا"></textarea>
+    <button class="primary" id="si_go">✨ حوّله لسكل</button><button class="link" id="si_back">رجوع للسكلات</button><div class="msg" id="si_msg"></div>`);
+  $("si_back").onclick = showSkills;
+  $("si_go").onclick = async () => {
+    const url = $("si_url").value.trim(), text = $("si_text").value.trim();
+    if (!url && text.length < 40) { $("si_msg").textContent = "الصق رابط، أو نص أطول شوية"; return; }
+    const b = $("si_go"); b.disabled = true; $("si_msg").textContent = "⏳ يار يقرا السكل ويحوّله… (ثواني)";
+    const { data, error } = await sb.functions.invoke("skill-import", { body: url ? { url } : { text } });
+    b.disabled = false;
+    if (error || !data?.skill) { let m = "ما كدرت أحوّله، جرّب مرة ثانية"; try { m = (await error.context.json()).error || m; } catch {} $("si_msg").textContent = m; return; }
+    const k = data.skill;
+    editSkill({ ...k, category: curCat, fields: (k.fields || []).map((l, i) => ({ key: "f" + i, label: l, long: false })) }, true);
+  };
+}
+function editSkill(k, forceNew){
+  const isNew = !k || !!forceNew; k = k || { name:"", icon:"✨", description:"", prompt:"", fields:[], category: curCat };
   const qs = (k.fields||[]).map(f=>f.label + (f.long ? " *" : "")).join("\n");
   openModal(`<h3>${isNew?'+ سكل جديد':'تعديل السكل'}</h3><div class="sub">اكتب ليار شلون يسوي هذي الشغلة، والأسئلة اللي يسألها كل مرة. السكل يكون إلك بس.</div>
     <label class="sub">اسم السكل</label><input class="field" id="sk_name" maxlength="60" placeholder="مثلاً: تقرير يومي لشغلي" value="${esc(k.name)}">
