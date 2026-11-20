@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YAR AI — يار</title>
+<meta name="theme-color" content="#120d24">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0f0b1f;--panel:#1a1433;--panel2:#231b45;--line:#33295e;--text:#f3f0ff;--muted:#a59cc9;--a1:#7c4dff;--a2:#ff6fae;--a3:#ffb86b}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Cairo',system-ui,sans-serif;background:radial-gradient(1200px 600px at 100% -10%,#2a1858 0%,transparent 60%),var(--bg);color:var(--text);display:flex;flex-direction:column}
+.grad{background:linear-gradient(135deg,var(--a1),var(--a2) 60%,var(--a3));-webkit-background-clip:text;background-clip:text;color:transparent}
+button{font-family:inherit;cursor:pointer}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);background:rgba(15,11,31,.85);backdrop-filter:blur(10px);position:sticky;top:0;z-index:5}
+.logo{font-weight:800;font-size:22px;letter-spacing:.5px}
+.logo small{font-size:12px;color:var(--muted);font-weight:600;margin-inline-start:6px}
+.icon-btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:12px;padding:8px 12px;font-size:14px}
+#auth{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:28px 22px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.card h1{font-size:30px;font-weight:800;text-align:center}
+.card p.sub{text-align:center;color:var(--muted);margin:6px 0 20px;font-size:14px}
+.card input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:12px;padding:12px 14px;font-family:inherit;font-size:15px;margin-bottom:10px;direction:ltr;text-align:right}
+.primary{width:100%;border:0;border-radius:12px;padding:12px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,var(--a1),var(--a2))}
+.link{background:none;border:0;color:var(--a3);font-size:14px;margin-top:12px;width:100%}
+.msg{font-size:13px;margin-top:10px;text-align:center;min-height:18px;color:var(--a3)}
+#app{flex:1;display:none;min-height:0}
+aside{width:270px;border-inline-end:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+aside .new{margin:12px;padding:10px;border-radius:12px;border:1px dashed var(--a1);background:transparent;color:var(--text);font-weight:700}
+#convs{overflow:auto;flex:1;padding:0 8px 8px}
+.conv{padding:10px 12px;border-radius:10px;color:var(--muted);font-size:14px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv.active,.conv:hover{background:var(--panel2);color:var(--text)}
+main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+#chat{flex:1;overflow:auto;padding:18px 14px 8px}
+.welcome{max-width:640px;margin:6vh auto 0;text-align:center}
+.welcome h2{font-size:34px;font-weight:800}
+.welcome p{color:var(--muted);margin:6px 0 22px}
+.chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;text-align:right;color:var(--text);font-size:14px}
+.chip b{display:block;margin-bottom:2px}
+.chip span{color:var(--muted);font-size:12.5px}
+.bubble{max-width:760px;margin:0 auto 14px;display:flex;gap:10px}
+.bubble .who{width:32px;height:32px;border-radius:10px;flex:none;display:grid;place-items:center;font-weight:800;font-size:14px}
+.bubble.user{flex-direction:row-reverse}
+.bubble.user .who{background:var(--panel2)}
+.bubble.ai .who{background:linear-gradient(135deg,var(--a1),var(--a2));color:#fff}
+.bubble .body{padding:10px 14px;border-radius:16px;line-height:1.85;font-size:15px;white-space:pre-wrap;word-wrap:break-word;min-width:0}
+.bubble.user .body{background:var(--panel2)}
+.bubble.ai .body{background:var(--panel);border:1px solid var(--line)}
+.bubble .tools{margin-top:6px;display:flex;gap:6px}
+.bubble .tools button{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:8px;font-size:12px;padding:2px 8px}
+.typing span{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);margin:0 2px;animation:b 1s infinite}
+.typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-4px)}}
+form#composer{padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:rgba(15,11,31,.9)}
+.box{max-width:760px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:8px}
+textarea{flex:1;background:transparent;border:0;color:var(--text);font-family:inherit;font-size:15px;resize:none;max-height:180px;padding:6px 8px;outline:none}
+.send{border:0;border-radius:12px;width:42px;height:42px;background:linear-gradient(135deg,var(--a1),var(--a2));color:#fff;font-size:18px}
+.send:disabled{opacity:.4}
+.meta{max-width:760px;margin:6px auto 0;display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+footer.credit{text-align:center;font-size:12px;color:var(--muted);padding:6px 0 8px}
+#menuBtn{display:none}
+#expiryBar{background:linear-gradient(90deg,#5a2a00,#7a3b00);color:#ffd9a8;text-align:center;font-size:13px;padding:6px 10px}
+.overlay{position:fixed;inset:0;background:rgba(5,3,12,.7);display:none;align-items:flex-end;justify-content:center;z-index:50}
+.overlay.show{display:flex}
+.modal{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:22px 22px 0 0;width:100%;max-width:640px;max-height:88vh;overflow:auto;padding:22px 16px calc(18px + env(safe-area-inset-bottom))}
+@media(min-width:700px){.overlay{align-items:center}.modal{border-radius:22px}}
+.modal h3{font-size:20px;margin-bottom:4px}.modal .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+.x{position:absolute;top:12px;left:12px;background:var(--panel2);border:0;color:var(--text);width:32px;height:32px;border-radius:10px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.plan{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--bg);cursor:pointer}
+.plan.sel{border-color:var(--a2);box-shadow:0 0 0 2px rgba(255,111,174,.25)}
+.plan.cur{opacity:.75}
+.plan .p{font-size:22px;font-weight:800}.plan .p small{font-size:12px;color:var(--muted);font-weight:600}
+.plan ul{list-style:none;font-size:13px;color:var(--muted);margin-top:6px;line-height:1.9}
+.pay{background:var(--bg);border:1px dashed var(--a3);border-radius:14px;padding:12px;font-size:14px;line-height:1.9;margin-bottom:10px}
+.pay b{color:var(--a3);direction:ltr;unicode-bidi:embed}
+.field{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:12px;padding:11px 12px;font-family:inherit;font-size:16px;margin-bottom:8px}
+.tabs{display:flex;gap:6px;margin:8px 0 12px;flex-wrap:wrap}
+.tabs button{background:var(--bg);border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:6px 12px;font-size:13px}
+.tabs button.on{color:var(--text);border-color:var(--a1)}
+.row{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;font-size:13.5px;background:var(--bg)}
+.row .t{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.row .em{direction:ltr;font-weight:600;word-break:break-all}
+.row .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.row .acts button{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:9px;padding:5px 10px;font-size:12.5px}
+.row .acts button.ok{background:#1f6b45;border-color:#1f6b45}.row .acts button.no{background:#6b1f2a;border-color:#6b1f2a}
+.badge{font-size:11.5px;padding:2px 8px;border-radius:20px;background:var(--panel2);color:var(--muted)}
+.badge.pro{background:#3b2a7a;color:#d9ccff}.badge.business{background:#6b3b10;color:#ffd9a8}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.stats div{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.stats b{display:block;font-size:22px}.stats span{font-size:12px;color:var(--muted)}
+@media (max-width:760px){
+  aside{position:fixed;inset:0 auto 0 0;inset-inline-start:0;top:57px;z-index:10;transform:translateX(100%);transition:.25s;width:82%;max-width:300px;right:0;left:auto}
+  aside.open{transform:none}
+  #menuBtn{display:inline-block}
+}
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="icon-btn" id="menuBtn" aria-label="القائمة">☰</button>
+    <div class="logo"><span class="grad">YAR AI</span><small>يار</small></div>
+  </div>
+  <div style="display:flex;gap:6px">
+    <button class="icon-btn" id="adminBtn" style="display:none">لوحة التحكم</button>
+    <button class="icon-btn" id="planBtn" style="display:none">⭐ باقتي</button>
+    <button class="icon-btn" id="logoutBtn" style="display:none">خروج</button>
+  </div>
+</header>
+<div id="expiryBar" style="display:none"></div>
+<div class="overlay" id="overlay"><div class="modal"><button class="x" id="closeModal">✕</button><div id="modalBody"></div></div></div>
+
+<section id="auth">
+  <div class="card">
+    <h1 class="grad">YAR AI</h1>
+    <p class="sub">ذكاء اصطناعي عراقي يحچي بلهجتك ويساعدك بكل شغلك</p>
+    <input id="email" type="email" placeholder="الإيميل" autocomplete="email">
+    <input id="pass" type="password" placeholder="كلمة السر (٦ أحرف أو أكثر)" autocomplete="current-password">
+    <button class="primary" id="authBtn">دخول</button>
+    <button class="link" id="toggleAuth">ما عندك حساب؟ سوّي حساب جديد</button>
+    <div class="msg" id="authMsg"></div>
+  </div>
+</section>
+
+<div id="app">
+  <aside id="side">
+    <button class="new" id="newChat">＋ محادثة جديدة</button>
+    <div id="convs"></div>
+  </aside>
+  <main>
+    <div id="chat"></div>
+    <form id="composer">
+      <div class="box">
+        <textarea id="input" rows="1" placeholder="اكتب لـ يار… (Enter للإرسال)"></textarea>
+        <button class="send" id="sendBtn" type="submit" aria-label="إرسال">➤</button>
+      </div>
+      <div class="meta"><span id="remain"></span><span>يار يراجع أجوبته، بس ممكن يغلط. تأكد من المعلومات المهمة.</span></div>
+    </form>
+  </main>
+</div>
+<footer class="credit">صُنع بواسطة YAR Studio</footer>
+
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const SUPABASE_URL = "https://wnjhsgjctevpaftvlcyr.supabase.co";
+const SUPABASE_KEY = "sb_publishable_qKc7vKrYAyUe0trChcVZuA_p-bBSubV";
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+let signup = false, convId = null, busy = false;
+
+const STARTERS = [
+  ["✍️ كابشن إعلان", "اكتبلي كابشن انستغرام لعرض الجمعة السوداء لصيدلية، باللهجة العراقية وقصير وجذاب"],
+  ["🎨 فكرة تصميم", "أريد فكرة تصميم بوستر لمطعم مشويات عراقي: النص، الألوان، الترتيب، وبرومبت صورة بالإنكليزي"],
+  ["📋 خطة مشروع", "سويلي خطة مختصرة لفتح محل اكسسوارات موبايل بكركوك"],
+  ["📩 رسالة رسمية", "اكتبلي رسالة رسمية لمدير الدائرة أطلب بيها إجازة ثلاث أيام"],
+];
+
+function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
+function fmt(s){return esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}
+
+function welcome(){
+  $("chat").innerHTML = `<div class="welcome"><h2 class="grad">شلونك؟ 👋</h2><p>آني يار، شنو نسوي اليوم؟</p><div class="chips">${
+    STARTERS.map((s,i)=>`<button class="chip" data-i="${i}"><b>${s[0]}</b><span>${esc(s[1]).slice(0,60)}…</span></button>`).join("")}</div></div>`;
+  $("chat").querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ $("input").value = STARTERS[b.dataset.i][1]; send(); });
+}
+function bubble(role, text){
+  if ($("chat").querySelector(".welcome")) $("chat").innerHTML = "";
+  const d = document.createElement("div");
+  d.className = "bubble " + (role === "user" ? "user" : "ai");
+  d.innerHTML = `<div class="who">${role === "user" ? "أنت".slice(0,1) : "Y"}</div><div><div class="body"></div></div>`;
+  const body = d.querySelector(".body");
+  if (text === null) body.innerHTML = `<span class="typing"><span></span><span></span><span></span></span>`;
+  else body.innerHTML = fmt(text);
+  if (role !== "user" && text) addCopy(d, text);
+  $("chat").appendChild(d); $("chat").scrollTop = $("chat").scrollHeight;
+  return d;
+}
+function addCopy(d, text){
+  const t = document.createElement("div"); t.className = "tools";
+  t.innerHTML = `<button>نسخ</button>`;
+  t.firstChild.onclick = async () => { try { await navigator.clipboard.writeText(text); t.firstChild.textContent = "انسخ ✓"; } catch {} };
+  d.querySelector(".body").parentElement.appendChild(t);
+}
+
+async function loadConvs(){
+  const { data } = await sb.from("conversations").select("id,title").order("updated_at",{ascending:false}).limit(50);
+  $("convs").innerHTML = "";
+  (data||[]).forEach(c=>{
+    const el = document.createElement("div");
+    el.className = "conv" + (c.id === convId ? " active" : "");
+    el.textContent = c.title; el.onclick = () => openConv(c.id);
+    $("convs").appendChild(el);
+  });
+}
+async function openConv(id){
+  convId = id; $("side").classList.remove("open");
+  const { data } = await sb.from("messages").select("role,content").eq("conversation_id", id).order("created_at");
+  $("chat").innerHTML = "";
+  (data||[]).forEach(m=>bubble(m.role, m.content));
+  if (!data?.length) welcome();
+  loadConvs();
+}
+async function send(){
+  const text = $("input").value.trim();
+  if (!text || busy) return;
+  busy = true; $("sendBtn").disabled = true; $("input").value = ""; autosize();
+  bubble("user", text);
+  const pending = bubble("ai", null);
+  try {
+    const { data, error } = await sb.functions.invoke("chat", { body: { conversation_id: convId, message: text } });
+    let reply, err, upgrade = false;
+    if (error) { try { const j = await error.context.json(); err = j.error; upgrade = !!j.upgrade; } catch { err = "صار خلل بالاتصال، جرّب مرة ثانية"; } }
+    else reply = data.reply;
+    const body = pending.querySelector(".body");
+    if (err) {
+      body.innerHTML = `<span style="color:var(--a3)">⚠️ ${esc(err)}</span>` + (upgrade ? `<br><button class="primary" style="margin-top:8px;width:auto;padding:8px 16px">⭐ شوف الباقات</button>` : "");
+      const ub = body.querySelector("button"); if (ub) ub.onclick = () => showPlans();
+    }
+    else {
+      body.innerHTML = fmt(reply); addCopy(pending, reply);
+      const isNew = !convId; convId = data.conversation_id;
+      if (typeof data.remaining === "number") $("remain").textContent = `باقي اليوم: ${data.remaining} رسالة`;
+      if (isNew) loadConvs();
+    }
+  } finally { busy = false; $("sendBtn").disabled = false; $("chat").scrollTop = $("chat").scrollHeight; }
+}
+function autosize(){ const t=$("input"); t.style.height="auto"; t.style.height=Math.min(t.scrollHeight,180)+"px"; }
+
+$("input").addEventListener("input", autosize);
+$("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && window.innerWidth > 760) { e.preventDefault(); send(); } });
+$("composer").onsubmit = e => { e.preventDefault(); send(); };
+$("newChat").onclick = () => { convId = null; welcome(); loadConvs(); $("side").classList.remove("open"); };
+$("menuBtn").onclick = () => $("side").classList.toggle("open");
+$("toggleAuth").onclick = () => {
+  signup = !signup;
+  $("authBtn").textContent = signup ? "سوّي حساب" : "دخول";
+  $("toggleAuth").textContent = signup ? "عندك حساب؟ سجّل دخول" : "ما عندك حساب؟ سوّي حساب جديد";
+  $("authMsg").textContent = "";
+};
+$("authBtn").onclick = async () => {
+  const email = $("email").value.trim(), password = $("pass").value;
+  if (!email || password.length < 6) { $("authMsg").textContent = "اكتب إيميل صحيح وكلمة سر ٦ أحرف أو أكثر"; return; }
+  $("authBtn").disabled = true; $("authMsg").textContent = "لحظة…";
+  const r = signup ? await sb.auth.signUp({ email, password }) : await sb.auth.signInWithPassword({ email, password });
+  $("authBtn").disabled = false;
+  if (r.error) { $("authMsg").textContent = /Invalid login/i.test(r.error.message) ? "الإيميل أو كلمة السر غلط" : r.error.message; return; }
+  if (signup && !r.data.session) $("authMsg").textContent = "✅ دزّينالك رسالة تأكيد على الإيميل، افتحها وبعدين سجّل دخول";
+};
+$("logoutBtn").onclick = () => sb.auth.signOut();
+
+/* ===== الاشتراكات ===== */
+let PLANS = [], SETTINGS = {}, ME = null, IS_ADMIN = false;
+const iqd = n => n.toLocaleString("ar-IQ") + " دينار";
+const dateAr = d => new Date(d).toLocaleDateString("ar-IQ", { year:"numeric", month:"long", day:"numeric" });
+function openModal(html){ $("modalBody").innerHTML = html; $("overlay").classList.add("show"); }
+function closeModal(){ $("overlay").classList.remove("show"); }
+$("closeModal").onclick = closeModal;
+$("overlay").onclick = e => { if (e.target.id === "overlay") closeModal(); };
+
+async function loadAccount(){
+  const uid = (await sb.auth.getUser()).data.user?.id;
+  const [p, s, me, adm] = await Promise.all([
+    sb.from("plans").select("*").order("sort"),
+    sb.from("settings").select("key,value"),
+    sb.from("profiles").select("plan,plan_until").eq("user_id", uid).maybeSingle(),
+    sb.rpc("is_admin"),
+  ]);
+  PLANS = p.data || []; SETTINGS = Object.fromEntries((s.data||[]).map(r=>[r.key,r.value]));
+  ME = me.data || { plan:"free" }; IS_ADMIN = !!adm.data;
+  const active = ME.plan !== "free" && ME.plan_until && new Date(ME.plan_until) > new Date();
+  if (!active) ME.plan = "free";
+  const cur = PLANS.find(x=>x.id===ME.plan);
+  $("planBtn").textContent = ME.plan === "free" ? "⭐ اشترك" : "⭐ " + (cur?.name || "باقتي");
+  $("adminBtn").style.display = IS_ADMIN ? "inline-block" : "none";
+  const left = active ? (new Date(ME.plan_until) - new Date()) / 864e5 : 99;
+  $("expiryBar").style.display = left <= 2 ? "block" : "none";
+  if (left <= 2) $("expiryBar").textContent = `⏰ اشتراكك ينتهي ${dateAr(ME.plan_until)}. جدّده حتى ما يرجع للمجاني.`;
+}
+
+function planCard(pl, sel){
+  return `<div class="plan ${sel?'sel':''} ${pl.id===ME.plan?'cur':''}" data-id="${pl.id}">
+    <div style="font-weight:800">${pl.name} ${pl.id===ME.plan?'<span class="badge">باقتك</span>':''}</div>
+    <div class="p">${pl.price_iqd ? pl.price_iqd.toLocaleString("ar-IQ") : "٠"} <small>${pl.price_iqd?'دينار / شهر':'مجاناً'}</small></div>
+    <ul><li>• ${pl.daily_limit} رسالة باليوم</li><li>• ${pl.review?'مراجع ذاتي يقلل الأخطاء':'محادثة وكتابة'}</li>${pl.id==='business'?'<li>• أولوية بالميزات الجديدة</li>':''}</ul></div>`;
+}
+async function showPlans(selId){
+  const { data: reqs } = await sb.from("payment_requests").select("plan,status,created_at").order("created_at",{ascending:false}).limit(1);
+  const pending = reqs?.[0]?.status === "pending";
+  const paid = PLANS.filter(p=>p.price_iqd>0);
+  const sel = selId || (paid.find(p=>p.id!==ME.plan)?.id ?? paid[0]?.id);
+  const selPlan = PLANS.find(p=>p.id===sel);
+  openModal(`<h3>باقات YAR AI</h3>
+    <div class="sub">${ME.plan==='free'?'إنت هسه على الباقة المجانية.':`باقتك: ${PLANS.find(p=>p.id===ME.plan)?.name}، تنتهي ${dateAr(ME.plan_until)}.`}</div>
+    <div class="plans">${PLANS.map(p=>planCard(p,p.id===sel)).join("")}</div>
+    ${pending ? `<div class="pay">⏳ طلبك وصلنا وراح يتفعّل خلال ساعات بإذن الله.</div>` : `
+    <div class="pay">للاشتراك بباقة <b>${selPlan.name}</b> حوّل <b>${iqd(selPlan.price_iqd)}</b><br>
+      عن طريق ${esc(SETTINGS.payment_method||'زين كاش')} على الرقم: <b>${esc(SETTINGS.payment_number||'—')}</b><br>
+      وبعدها اكتب رقمك اللي حوّلت منه هنا، ونفعّل اشتراكك لمدة شهر.</div>
+    <input class="field" id="sender" inputmode="tel" placeholder="رقمك اللي حوّلت منه" dir="ltr">
+    <input class="field" id="pnote" placeholder="ملاحظة (اختياري)">
+    <button class="primary" id="sendReq">حوّلت، فعّلولي الاشتراك</button>
+    <div class="msg" id="reqMsg"></div>`}`);
+  $("modalBody").querySelectorAll(".plan").forEach(el=>el.onclick=()=>{ if (PLANS.find(p=>p.id===el.dataset.id).price_iqd>0) showPlans(el.dataset.id); });
+  const btn = $("sendReq"); if (!btn) return;
+  btn.onclick = async () => {
+    const sender = $("sender").value.trim();
+    if (sender.replace(/\D/g,"").length < 10) { $("reqMsg").textContent = "اكتب رقم موبايل صحيح"; return; }
+    btn.disabled = true;
+    const { error } = await sb.from("payment_requests").insert({ plan: sel, sender, note: $("pnote").value.trim() || null });
+    btn.disabled = false;
+    if (error) { $("reqMsg").textContent = "ما انرسل، جرّب مرة ثانية"; return; }
+    showPlans(sel);
+  };
+}
+$("planBtn").onclick = () => showPlans();
+
+/* ===== لوحة التحكم ===== */
+let adminTab = "requests";
+async function showAdmin(){
+  const [u, r] = await Promise.all([
+    sb.rpc("admin_users"),
+    sb.from("payment_requests").select("id,user_id,plan,sender,note,status,created_at").order("created_at",{ascending:false}).limit(200),
+  ]);
+  const users = u.data || [], reqs = r.data || [];
+  const byId = Object.fromEntries(users.map(x=>[x.user_id,x]));
+  const pend = reqs.filter(x=>x.status==="pending");
+  const paying = users.filter(x=>x.plan!=="free");
+  const income = paying.reduce((s,x)=>s+(PLANS.find(p=>p.id===x.plan)?.price_iqd||0),0);
+  let body = "";
+  if (adminTab === "requests") {
+    body = pend.length ? pend.map(q=>`<div class="row"><div class="t"><span class="em">${esc(byId[q.user_id]?.email||'—')}</span><span class="badge ${q.plan}">${PLANS.find(p=>p.id===q.plan)?.name}</span></div>
+      <div>حوّل من: <b dir="ltr">${esc(q.sender)}</b> · ${dateAr(q.created_at)}</div>${q.note?`<div style="color:var(--muted)">${esc(q.note)}</div>`:''}
+      <div class="acts"><button class="ok" data-act="approve" data-u="${q.user_id}" data-p="${q.plan}">✓ وصل المبلغ، فعّل شهر</button><button class="no" data-act="reject" data-r="${q.id}">✕ رفض</button></div></div>`).join("")
+      : `<div class="sub">ماكو طلبات جديدة.</div>`;
+  } else if (adminTab === "users") {
+    body = `<input class="field" id="q" placeholder="ابحث بالإيميل" dir="ltr">` + `<div id="ulist">${users.map(x=>`<div class="row" data-em="${esc((x.email||'').toLowerCase())}"><div class="t"><span class="em">${esc(x.email||'—')}</span><span class="badge ${x.plan}">${PLANS.find(p=>p.id===x.plan)?.name}</span></div>
+      <div style="color:var(--muted)">${x.plan!=='free'?'ينتهي '+dateAr(x.plan_until)+' · ':''}استخدم اليوم ${x.used_today} رسالة</div>
+      <div class="acts">${PLANS.filter(p=>p.price_iqd>0).map(p=>`<button data-act="approve" data-u="${x.user_id}" data-p="${p.id}">+ شهر ${p.name}</button>`).join("")}${x.plan!=='free'?`<button class="no" data-act="free" data-u="${x.user_id}">إلغاء</button>`:''}</div></div>`).join("")}</div>`;
+  } else {
+    body = `<label class="sub">طريقة الدفع</label><input class="field" id="s_method" value="${esc(SETTINGS.payment_method||'')}">
+      <label class="sub">رقم التحويل (يظهر للمشتركين)</label><input class="field" id="s_number" dir="ltr" value="${esc(SETTINGS.payment_number||'')}">
+      <button class="primary" id="saveSet">حفظ</button><div class="msg" id="setMsg"></div>`;
+  }
+  openModal(`<h3>لوحة التحكم</h3>
+    <div class="stats"><div><b>${users.length}</b><span>مستخدم</span></div><div><b>${paying.length}</b><span>مشترك</span></div><div><b>${(income/1000).toLocaleString("ar-IQ")} ألف</b><span>دخل شهري تقريبي</span></div></div>
+    <div class="tabs"><button data-tab="requests" class="${adminTab==='requests'?'on':''}">الطلبات (${pend.length})</button><button data-tab="users" class="${adminTab==='users'?'on':''}">المستخدمين</button><button data-tab="settings" class="${adminTab==='settings'?'on':''}">الإعدادات</button></div>${body}`);
+  const m = $("modalBody");
+  m.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ adminTab=b.dataset.tab; showAdmin(); });
+  m.querySelectorAll("[data-act]").forEach(b=>b.onclick=async()=>{
+    b.disabled = true;
+    if (b.dataset.act==="approve") await sb.rpc("admin_set_plan",{p_user:b.dataset.u,p_plan:b.dataset.p,p_days:30});
+    if (b.dataset.act==="free") await sb.rpc("admin_set_plan",{p_user:b.dataset.u,p_plan:"free",p_days:0});
+    if (b.dataset.act==="reject") await sb.from("payment_requests").update({status:"rejected"}).eq("id",b.dataset.r);
+    await loadAccount(); showAdmin();
+  });
+  const q = $("q"); if (q) q.oninput = () => m.querySelectorAll("#ulist .row").forEach(r=>r.style.display = r.dataset.em.includes(q.value.toLowerCase()) ? "" : "none");
+  const sv = $("saveSet"); if (sv) sv.onclick = async () => {
+    await sb.from("settings").update({value:$("s_method").value.trim()}).eq("key","payment_method");
+    const { error } = await sb.from("settings").update({value:$("s_number").value.trim()}).eq("key","payment_number");
+    $("setMsg").textContent = error ? "ما انحفظ" : "✅ انحفظ"; await loadAccount();
+  };
+}
+$("adminBtn").onclick = () => { adminTab = "requests"; showAdmin(); };
+
+function render(session){
+  const inApp = !!session;
+  $("auth").style.display = inApp ? "none" : "flex";
+  $("app").style.display = inApp ? "flex" : "none";
+  $("logoutBtn").style.display = inApp ? "inline-block" : "none";
+  $("planBtn").style.display = inApp ? "inline-block" : "none";
+  if (!inApp) { $("adminBtn").style.display = "none"; $("expiryBar").style.display = "none"; }
+  if (inApp) { convId = null; welcome(); loadConvs(); loadAccount(); }
+}
+sb.auth.onAuthStateChange((_e, s) => render(s));
+const { data: { session } } = await sb.auth.getSession(); render(session);
+</script>
+</body>
+</html>
