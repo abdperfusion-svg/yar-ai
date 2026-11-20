@@ -695,16 +695,37 @@ async function openConv(id, cat){
   if (!data?.length) welcome();
   loadConvs();
 }
+// تصغير صورة قبل الإرسال (أسرع على النت الضعيف)
+function shrinkImage(f, max){
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width*k); c.height = Math.round(img.height*k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      res({ mime: "image/jpeg", data: c.toDataURL("image/jpeg", 0.88).split(",")[1], w: c.width, h: c.height });
+    };
+    img.onerror = () => res({ mime: f.mime, data: f.data });
+    img.src = `data:${f.mime};base64,${f.data}`;
+  });
+}
 async function send(){
   const text = $("input").value.trim();
-  if (imgMode && ATT.length) { alertBox("تعديل الصور المرفوعة جاي قريباً بالاستوديو. هسه: طفّي 🎨 وأرسل الصورة حتى يار يحللها ويوصفها، أو اكتب وصف لصورة جديدة"); return; }
+  // وضع الصور ويا صورة مرفوعة = تعديل الصورة (نصغّرها أول حتى توصل بسرعة)
+  let ref = null;
+  if (imgMode && ATT.length) {
+    const im = ATT.find(f => f.mime.startsWith("image/"));
+    if (!im) { alertBox("بوضع الصور ارفع صورة بس (مو ملف)"); return; }
+    if (!text) { alertBox("اكتب شنو تريد تغيّر بالصورة، مثلاً: حوّلها لستايل كرتون"); return; }
+    ref = await shrinkImage(im, 1024);
+  }
   const files = imgMode ? [] : ATT.slice();
   try { localStorage.removeItem("yar_draft"); sessionStorage.removeItem("yar_att"); } catch {}
   if ((!text && !files.length) || busy) return;
   ATT = []; renderAtt();
   busy = true; $("sendBtn").disabled = true; $("input").value = ""; autosize();
-  bubble("user", files.length ? `📎 ${files.map(f=>f.name).join("، ")}\n${text}` : text);
-  const pending = bubble("ai", null); if (imgMode) pending.querySelector(".shimmer").textContent = "يار يرسم الصورة… (تاخذ ثواني)";
+  bubble("user", files.length ? `📎 ${files.map(f=>f.name).join("، ")}\n${text}` : (ref ? `🖼️ ${text}` : text));
+  const pending = bubble("ai", null); if (imgMode) pending.querySelector(".shimmer").textContent = ref ? "يار يعدّل صورتك… (تاخذ ثواني)" : "يار يرسم الصورة… (تاخذ ثواني)";
   const body = pending.querySelector(".body");
   const showErr = (err, upgrade) => {
     body.innerHTML = `<span class="err">⚠️ ${esc(err)}</span>` + (upgrade ? `<br><button class="primary" style="margin-top:10px;width:auto;padding:8px 18px">⭐ شوف الباقات</button>` : "");
@@ -720,7 +741,7 @@ async function send(){
   };
   try {
     if (imgMode) {
-      const { data, error } = await sb.functions.invoke("image", { body: { conversation_id: convId, message: text, category: curCat, files } });
+      const { data, error } = await sb.functions.invoke("image", { body: { conversation_id: convId, message: text, category: curCat, ref } });
       if (error) { try { const j = await error.context.json(); showErr(j.error, !!j.upgrade); } catch { showErr("صار خلل بالاتصال، جرّب مرة ثانية"); } }
       else done(data);
       return;

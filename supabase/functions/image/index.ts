@@ -59,6 +59,34 @@ async function gemImage(prompt: string, aspect: string): Promise<Uint8Array | nu
 }
 
 const b64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+// تعديل صورة المستخدم: جوجل أول (أذكى)، وبعدها كلاودفلير (يحافظ على شكل الصورة ويغيّر الستايل)
+async function editImage(ref: { mime: string; data: string }, instruction: string, prompt: string): Promise<Uint8Array | null> {
+  const key = Deno.env.get("GEMINI_API_KEY")!;
+  for (const m of IMG_MODELS) {
+    const t = Date.now();
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m.trim()}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, signal: T(60000),
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ inline_data: { mime_type: ref.mime, data: ref.data } }, { text: `Edit this image: ${instruction}\nKeep the same person/subject, face and pose. ${prompt}` }] }], generationConfig: { responseModalities: ["IMAGE"] } }) }).catch(() => null);
+    console.log("edit-gemini", m, r?.status, Date.now() - t);
+    if (!r?.ok) { if (r?.status === 429) break; continue; }
+    const j = await r.json();
+    const part = (j?.candidates?.[0]?.content?.parts ?? []).find((p: { inlineData?: { data: string } }) => p.inlineData);
+    if (part) return b64(part.inlineData.data);
+  }
+  const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
+  if (cfAcc && cfTok) {
+    const t = Date.now();
+    try {
+      const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img`, {
+        method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: T(60000),
+        body: JSON.stringify({ prompt: prompt.slice(0, 900), image: Array.from(b64(ref.data)), strength: 0.6, num_steps: 20, guidance: 7.5 }) });
+      console.log("edit-cloudflare", r.status, Date.now() - t);
+      const img = await asImage(r); if (img) return img;
+      if (!r.ok) console.error("edit-cloudflare", (await r.text()).slice(0, 300));
+    } catch (e) { console.error("edit-cloudflare", String(e)); }
+  }
+  return null;
+}
 async function asImage(r: Response | null): Promise<Uint8Array | null> {
   if (!r?.ok) return null;
   const type = r.headers.get("content-type") ?? "";
@@ -115,7 +143,8 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "سجّل دخول أول" }, 401);
 
-    const { conversation_id, message, category } = await req.json();
+    const { conversation_id, message, category, ref } = await req.json();
+    const hasRef = ref && typeof ref.data === "string" && ref.data.length < 8_000_000;
     const text = String(message ?? "").trim().slice(0, 2000);
     if (!text) return json({ error: "اكتب وصف الصورة" }, 400);
 
@@ -127,14 +156,18 @@ Deno.serve(async (req) => {
 
     let spec = { prompt: text, aspect: "1:1", caption: "هاي الصورة اللي طلبتها" };
     const tp = Date.now();
-    try { spec = { ...spec, ...JSON.parse(await gemText(PROMPTER, text)) }; } catch { /* raw text */ }
+    try { spec = { ...spec, ...JSON.parse(await gemText(PROMPTER, hasRef ? `The user uploaded a photo and wants it transformed: "${text}". Write the prompt for the final edited image (same subject and composition, new style).` : text)) }; } catch { /* raw text */ }
     console.log("prompt-time", Date.now() - tp, "ms");
     if (!SIZES[spec.aspect]) spec.aspect = "1:1";
 
     // صور Google المدفوعة بس إذا فعّلنا الدفع (GEMINI_IMAGES=1)، غير هيج نروح للمجاني مباشرة بدون انتظار
     const t0 = Date.now();
-    let bytes: Uint8Array | null = null;
-    if (plan?.id !== "free" && Deno.env.get("GEMINI_IMAGES") === "1") bytes = await gemImage(spec.prompt, spec.aspect);
+    let bytes: Uint8Array | null = null, note = "";
+    if (hasRef) {
+      bytes = await editImage(ref, text, spec.prompt);
+      if (!bytes) note = "\n\n_ما كدرت أعدّل صورتك نفسها هسه، فسويتلك صورة جديدة بنفس الوصف._";
+    }
+    if (!bytes && plan?.id !== "free" && Deno.env.get("GEMINI_IMAGES") === "1") bytes = await gemImage(spec.prompt, spec.aspect);
     if (!bytes) { const [w, h] = SIZES[spec.aspect]; bytes = await freeImage(spec.prompt, w, h); }
     console.log("image-time", Date.now() - t0, "ms");
     if (!bytes) {
@@ -156,9 +189,9 @@ Deno.serve(async (req) => {
       const { data: c } = await admin.from("conversations").select("id").eq("id", convId).eq("user_id", user.id).maybeSingle();
       if (!c) return json({ error: "المحادثة مو موجودة" }, 404);
     }
-    const reply = `${spec.caption}\n\n![صورة](${imageUrl})`;
+    const reply = `${spec.caption}${note}\n\n![صورة](${imageUrl})`;
     await admin.from("messages").insert([
-      { conversation_id: convId, user_id: user.id, role: "user", content: "🎨 " + text },
+      { conversation_id: convId, user_id: user.id, role: "user", content: (hasRef ? "🖼️ " : "🎨 ") + text },
       { conversation_id: convId, user_id: user.id, role: "assistant", content: reply },
     ]);
     await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
