@@ -52,6 +52,17 @@ async function gemini(system: string, contents: unknown[], jsonOut = false, sear
       lastErr = "empty";
     } else lastErr = `${r.status} ${await r.text()}`;
   }
+  // احتياطي: إذا Gemini وكع، نستخدم Groq (يشتغل بس إذا انحط GROQ_API_KEY)
+  const gk = Deno.env.get("GROQ_API_KEY");
+  if (gk) {
+    const msgs = [{ role: "system", content: system }, ...(contents as { role: string; parts: { text?: string }[] }[]).map((c) => ({
+      role: c.role === "model" ? "assistant" : "user", content: c.parts.map((p) => p.text ?? "").join("\n") || "(ملف مرفق)" }))];
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${gk}` },
+      body: JSON.stringify({ model: Deno.env.get("GROQ_MODEL") ?? "llama-3.3-70b-versatile", messages: msgs, temperature: jsonOut ? 0.1 : 0.6, ...(jsonOut ? { response_format: { type: "json_object" } } : {}) }) });
+    if (r.ok) { const j = await r.json(); const t = j?.choices?.[0]?.message?.content ?? ""; if (t.trim()) return t; }
+    else lastErr += ` | groq ${r.status}`;
+  }
   throw new Error(lastErr);
 }
 

@@ -36,6 +36,8 @@ button{font-family:inherit;cursor:pointer;color:inherit}
 .card input:focus{border-color:var(--a1)}
 .primary{width:100%;border:0;border-radius:14px;padding:13px;font-size:16px;font-weight:600;color:#fff;background:linear-gradient(120deg,var(--a1),var(--a2))}
 .primary:disabled{opacity:.5}
+.gbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1f1f1f;border:0;border-radius:14px;padding:13px;font-size:16px;font-weight:600}
+.or{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:13px;margin:16px 0}.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
 .link{background:none;border:0;color:var(--muted);font-size:14px;margin-top:12px;width:100%}
 .link:hover{color:var(--text)}
 .msg{font-size:13.5px;margin-top:10px;min-height:18px;color:var(--a3)}
@@ -202,8 +204,11 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
     <svg class="spark"><use href="#spark"/></svg>
     <h1>YAR <span class="grad">AI</span></h1>
     <p class="sub">ذكاء اصطناعي عراقي يحچي بلهجتك ويساعدك بكل شغلك</p>
+    <button class="gbtn" id="googleBtn" type="button"><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg> الدخول بحساب Google</button>
+    <div class="or"><span>أو بالإيميل</span></div>
     <input id="email" type="email" placeholder="الإيميل" autocomplete="email">
     <input id="pass" type="password" placeholder="كلمة السر (٦ أحرف أو أكثر)" autocomplete="current-password">
+    <div id="captcha" style="display:flex;justify-content:center;margin:2px 0 8px"></div>
     <button class="primary" id="authBtn">دخول</button>
     <button class="link" id="forgotBtn">نسيت كلمة السر؟</button>
     <button class="link" id="toggleAuth" style="margin-top:4px">ما عندك حساب؟ سوّي حساب جديد</button>
@@ -355,6 +360,19 @@ $("fileIn").onchange = async () => {
   $("fileIn").value = ""; renderAtt();
 };
 function alertBox(m){ $("remain").textContent = "⚠️ " + m + " ·"; }
+
+/* ===== الدخول بـ Google + حماية Turnstile ===== */
+const TURNSTILE_SITEKEY = "";   // يتعبّى بعد ما تسوي حساب Cloudflare Turnstile
+let captchaToken = null;
+if (TURNSTILE_SITEKEY) {
+  window.onTurnstile = () => window.turnstile.render("#captcha", { sitekey: TURNSTILE_SITEKEY, theme: "dark", callback: t => captchaToken = t });
+  const s = document.createElement("script"); s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstile"; s.async = true; document.head.appendChild(s);
+}
+$("googleBtn").onclick = async () => {
+  $("authMsg").textContent = "لحظة…";
+  const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
+  if (error) $("authMsg").textContent = /not enabled|Unsupported provider/i.test(error.message) ? "الدخول بـ Google بعده ما متفعّل، استخدم الإيميل لهسه" : error.message;
+};
 function closeSide(){ $("side").classList.remove("open"); $("scrim").classList.remove("open"); }
 $("menuBtn").onclick = () => { $("side").classList.add("open"); $("scrim").classList.add("open"); };
 $("scrim").onclick = closeSide;
@@ -432,7 +450,7 @@ $("authBtn").onclick = async () => {
   const email = $("email").value.trim(), password = $("pass").value;
   if (!email || password.length < 6) { $("authMsg").textContent = "اكتب إيميل صحيح وكلمة سر ٦ أحرف أو أكثر"; return; }
   $("authBtn").disabled = true; $("authMsg").textContent = "لحظة…";
-  const r = signup ? await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }) : await sb.auth.signInWithPassword({ email, password });
+  const r = signup ? await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname, captchaToken } }) : await sb.auth.signInWithPassword({ email, password, options: { captchaToken } });
   $("authBtn").disabled = false;
   if (r.error) { $("authMsg").textContent = /Invalid login/i.test(r.error.message) ? "الإيميل أو كلمة السر غلط" : r.error.message; return; }
   if (signup && !r.data.session) $("authMsg").textContent = "✅ دزّينالك رسالة تأكيد على الإيميل، افتحها وبعدين سجّل دخول";
@@ -442,7 +460,7 @@ $("forgotBtn").onclick = async () => {
   const email = $("email").value.trim();
   if (!email.includes("@")) { $("authMsg").textContent = "اكتب إيميلك فوگ أول، وبعدين اضغط «نسيت كلمة السر؟»"; return; }
   $("authMsg").textContent = "لحظة…";
-  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname, captchaToken });
   $("authMsg").textContent = error ? "ما انرسل، جرّب بعد شوية" : "✅ دزّينالك رابط على إيميلك. افتحه وتطلعلك خانة كلمة سر جديدة (إذا ما لگيته شوف السبام).";
 };
 function showNewPassword(){
