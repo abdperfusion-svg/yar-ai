@@ -52,11 +52,26 @@ async function gemini(system: string, contents: unknown[], jsonOut = false, sear
       lastErr = "empty";
     } else lastErr = `${r.status} ${await r.text()}`;
   }
-  // احتياطي: إذا Gemini وكع، نستخدم Groq (يشتغل بس إذا انحط GROQ_API_KEY)
+  // احتياطي ١: OpenRouter بنماذج مجانية (يشتغل إذا انحط OPENROUTER_API_KEY)
+  // احتياطي ٢: Groq (يشتغل إذا انحط GROQ_API_KEY)
+  const msgs = [{ role: "system", content: system }, ...(contents as { role: string; parts: { text?: string }[] }[]).map((c) => ({
+    role: c.role === "model" ? "assistant" : "user", content: c.parts.map((p) => p.text ?? "").join("\n") || "(ملف مرفق)" }))];
+  const clean = (t: string) => jsonOut ? t.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "") : t;
+  const ork = Deno.env.get("OPENROUTER_API_KEY");
+  if (ork) {
+    const orModels = (Deno.env.get("OPENROUTER_MODELS") ?? "deepseek/deepseek-chat-v3-0324:free,meta-llama/llama-3.3-70b-instruct:free,qwen/qwen3-235b-a22b:free,openrouter/free").split(",");
+    for (const m of orModels) {
+      try {
+        const r = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${ork}`, "HTTP-Referer": "https://abdperfusion-svg.github.io/yar-ai/", "X-Title": "YAR AI" },
+          body: JSON.stringify({ model: m.trim(), messages: msgs, temperature: jsonOut ? 0.1 : 0.6 }) });
+        if (r.ok) { const j = await r.json(); const t = j?.choices?.[0]?.message?.content ?? ""; if (t.trim()) return clean(t); lastErr += ` | or ${m} empty`; }
+        else lastErr += ` | or ${m} ${r.status}`;
+      } catch (e) { lastErr += ` | or ${m} ${e}`; }
+    }
+  }
   const gk = Deno.env.get("GROQ_API_KEY");
   if (gk) {
-    const msgs = [{ role: "system", content: system }, ...(contents as { role: string; parts: { text?: string }[] }[]).map((c) => ({
-      role: c.role === "model" ? "assistant" : "user", content: c.parts.map((p) => p.text ?? "").join("\n") || "(ملف مرفق)" }))];
     const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${gk}` },
       body: JSON.stringify({ model: Deno.env.get("GROQ_MODEL") ?? "llama-3.3-70b-versatile", messages: msgs, temperature: jsonOut ? 0.1 : 0.6, ...(jsonOut ? { response_format: { type: "json_object" } } : {}) }) });
