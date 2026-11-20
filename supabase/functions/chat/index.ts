@@ -6,7 +6,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const MODELS = (Deno.env.get("GEMINI_MODELS") ?? "gemini-2.5-flash,gemini-2.0-flash").split(",");
+const MODELS = (Deno.env.get("GEMINI_MODELS") ?? "gemini-3.5-flash,gemini-3.8-flash,gemini-flash-latest,gemini-3.5-flash-lite").split(",");
 const HISTORY = 24;        // آخر رسائل تنرسل كاملة
 const MAX_MEMORIES = 80;   // أقصى عدد معلومات محفوظة لكل مستخدم
 
