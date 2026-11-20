@@ -19,7 +19,7 @@
    PICTURE: نجمة يار المتدرجة + صندوق الكتابة
    COLOUR: أسود دافئ، رمادي ناعم، لمسة متدرجة بنفسجي-وردي لهوية YAR
    TYPE: IBM Plex Sans Arabic، LAYOUT: قائمة جانبية + عمود محادثة ٧٦٠ */
-:root{--bg:#131314;--side:#1b1b1d;--panel:#1e1f20;--panel2:#282a2c;--line:#2f3133;--text:#e8e8ea;--muted:#9a9ba0;--dim:#6b6c72;--a1:#E3B04B;--a2:#C98A3A;--a3:#F2D27A;--ok:#22c55e}
+:root{--bg:#131314;--side:#1b1b1d;--panel:#1e1f20;--panel2:#282a2c;--line:#2f3133;--text:#e8e8ea;--muted:#9a9ba0;--dim:#6b6c72;--a1:#60A5FA;--a2:#A78BFA;--a3:#5EEAD4;--ok:#22c55e}
 *{box-sizing:border-box;margin:0;padding:0;min-width:0}
 html,body{height:100%}
 body{font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;font-size:16px;-webkit-font-smoothing:antialiased;overflow:hidden}
@@ -27,7 +27,7 @@ button{font-family:inherit;cursor:pointer;color:inherit}
 .grad{background:linear-gradient(120deg,var(--a1),var(--a2) 55%,var(--a3));-webkit-background-clip:text;background-clip:text;color:transparent}
 .spark{width:28px;height:28px;flex:none;color:#F4F2EE}
 /* ===== الدخول ===== */
-#auth{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(600px 400px at 50% 15%,rgba(227,176,75,.10),transparent 70%)}
+#auth{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(600px 400px at 50% 15%,rgba(96,165,250,.10),transparent 70%)}
 .card{width:100%;max-width:380px;text-align:center}
 .card .spark{width:56px;height:56px;margin:0 auto 14px}
 .card h1{font-size:34px;font-weight:700;letter-spacing:-.5px}
@@ -67,7 +67,7 @@ main{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;min-height:56px}
 .topbar .title{font-size:17px;font-weight:600;display:flex;gap:8px;align-items:center}
 .pill{font-size:12px;padding:3px 10px;border-radius:20px;background:var(--panel2);color:var(--muted);font-weight:500}
-.pill.pro{background:rgba(227,176,75,.14);color:#F2D27A}.pill.business{background:rgba(245,165,36,.16);color:#fcd38d}
+.pill.pro{background:rgba(96,165,250,.14);color:#5EEAD4}.pill.business{background:rgba(245,165,36,.16);color:#fcd38d}
 .ibtn{background:transparent;border:0;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:19px;color:var(--muted)}
 .ibtn:hover{background:var(--panel2);color:var(--text)}
 #menuBtn{display:none}
@@ -97,7 +97,7 @@ main.empty .topbar{position:absolute;top:0;inset-inline:0}
 .body table{border-collapse:collapse;margin:10px 0;display:block;overflow-x:auto;font-size:14.5px}
 .body th,.body td{border:1px solid var(--line);padding:7px 11px;text-align:right}.body th{background:var(--panel)}
 .body blockquote{border-inline-start:3px solid var(--a1);padding-inline-start:12px;color:var(--muted);margin:8px 0}
-.body a{color:#F2D27A}
+.body a{color:#5EEAD4}
 .tools{margin-top:8px;display:flex;gap:2px}
 .tools button{background:transparent;border:0;color:var(--dim);border-radius:8px;font-size:13px;padding:5px 8px}
 .tools button:hover{background:var(--panel2);color:var(--text)}
@@ -109,7 +109,7 @@ main.empty .topbar{position:absolute;top:0;inset-inline:0}
 .att{display:flex;align-items:center;gap:6px;background:var(--panel2);border-radius:12px;padding:5px 10px;font-size:12.5px;color:var(--muted);max-width:200px}
 .att span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.att button{background:none;border:0;color:var(--dim);font-size:14px}
 .body img{max-width:100%;border-radius:16px;margin:8px 0;display:block;background:var(--panel2);min-height:120px}
-.catchip.on{background:linear-gradient(120deg,rgba(227,176,75,.22),rgba(201,138,58,.22));border-color:var(--a2);color:var(--text)}
+.catchip.on{background:linear-gradient(120deg,rgba(96,165,250,.22),rgba(167,139,250,.22));border-color:var(--a2);color:var(--text)}
 /* صندوق الكتابة */
 form#composer{padding:0 16px calc(12px + env(safe-area-inset-bottom))}
 .box{max-width:760px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:26px;padding:12px 14px 10px;transition:border-color .2s;box-shadow:0 8px 30px rgba(0,0,0,.25)}
@@ -118,7 +118,7 @@ textarea{width:100%;background:transparent;border:0;color:var(--text);font-famil
 textarea::placeholder{color:var(--dim)}
 .box-row{display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:8px}
 .catchip{display:flex;align-items:center;gap:6px;white-space:nowrap;flex:none;background:transparent;border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:13.5px;color:var(--muted);position:relative}
-.box-row{overflow-x:auto;scrollbar-width:none}.box-row::-webkit-scrollbar{display:none}
+.box-row{flex-wrap:wrap;row-gap:6px}
 @media(max-width:560px){.hide-sm{display:none}}
 .cursor::after{content:"▍";color:var(--a1);animation:pulse 1s infinite;margin-inline-start:2px}
 .catchip:hover{color:var(--text);background:var(--panel2)}
@@ -155,7 +155,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
 .icon-btn{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:14px}
 .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
 .plan{border:1px solid var(--line);border-radius:18px;padding:14px;background:var(--bg);cursor:pointer}
-.plan.sel{border-color:var(--a1);box-shadow:0 0 0 2px rgba(227,176,75,.3)}
+.plan.sel{border-color:var(--a1);box-shadow:0 0 0 2px rgba(96,165,250,.3)}
 .plan.cur{opacity:.8}
 .plan .p{font-size:22px;font-weight:700}.plan .p small{font-size:12px;color:var(--muted);font-weight:500}
 .plan ul{list-style:none;font-size:13px;color:var(--muted);margin-top:6px;line-height:1.9}
@@ -173,7 +173,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
 .row .acts button{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:5px 10px;font-size:12.5px}
 .row .acts button.ok{background:#166534;border-color:#166534}.row .acts button.no{background:#7f1d1d;border-color:#7f1d1d}
 .badge{font-size:11.5px;padding:2px 9px;border-radius:20px;background:var(--panel2);color:var(--muted)}
-.badge.pro{background:rgba(227,176,75,.16);color:#F2D27A}.badge.business{background:rgba(245,165,36,.18);color:#fcd38d}
+.badge.pro{background:rgba(96,165,250,.16);color:#5EEAD4}.badge.business{background:rgba(245,165,36,.18);color:#fcd38d}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
 .stats div{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
 .stats b{display:block;font-size:22px}.stats span{font-size:12px;color:var(--muted)}
@@ -198,8 +198,8 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute"><defs>
-  <linearGradient id="yg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F2D27A"/><stop offset="1" stop-color="#C98A3A"/></linearGradient>
-  <symbol id="spark" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.2 4.2c.4 4.6 2.9 7.9 6.8 8.8"/><path d="M17.4 6.6 12 13v7.6"/></g><circle cx="19.2" cy="4.4" r="2.1" fill="#E3B04B"/></symbol>
+  <linearGradient id="yg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5EEAD4"/><stop offset="1" stop-color="#A78BFA"/></linearGradient>
+  <symbol id="spark" viewBox="170 170 700 690"><defs><linearGradient id="yg" gradientUnits="userSpaceOnUse" x1="230" y1="280" x2="660" y2="790"><stop offset="0" stop-color="#5EEAD4"/><stop offset=".5" stop-color="#60A5FA"/><stop offset="1" stop-color="#C084FC"/></linearGradient></defs><g fill="none" stroke="url(#yg)" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"><path d="M235 295 L340 535"/><path d="M445 290 L240 780"/><path d="M340 545 V780"/><path d="M445 300 V780"/><path d="M445 290 C560 290 625 360 625 445 C625 495 605 535 580 560"/><path d="M462 330 L645 780"/></g><path fill="#60A5FA" d="M716 198 C722 238 735 252 776 258 C735 264 722 278 716 318 C710 278 697 264 656 258 C697 252 710 238 716 198Z"/><path fill="#A78BFA" d="M795 336 C798 352 804 358 820 362 C804 366 798 372 795 388 C792 372 786 366 770 362 C786 358 792 352 795 336Z"/></symbol>
 </defs></svg>
 
 <section id="auth">
