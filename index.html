@@ -565,12 +565,34 @@ async function exportAs(kind, text){
 }
 
 /* ===== الصوت: يار يقرا الجواب، وإنت تحچي بدل الكتابة ===== */
-function speak(text, btn){
+// نعرف لغة النص من حروفه: كردي (سوراني)، عربي، أو إنكليزي
+function textLang(t){
+  t = String(t||"");
+  const ar = (t.match(/[\u0600-\u06FF]/g)||[]).length, la = (t.match(/[A-Za-z]/g)||[]).length;
+  if (/[ڕڵێۆەھڤ]/.test(t)) return "ckb";
+  if (ar >= la && ar) return "ar";
+  return la ? "en" : "ar";
+}
+const LANG_TAGS = { ar:["ar-IQ","ar-SA","ar"], ckb:["ckb-IQ","ku","ckb","ar-IQ","ar"], en:["en-US","en-GB","en"] };
+function getVoicesReady(){
+  return new Promise(res => {
+    const v = speechSynthesis.getVoices(); if (v.length) return res(v);
+    const done = () => res(speechSynthesis.getVoices());
+    speechSynthesis.addEventListener("voiceschanged", done, { once:true }); setTimeout(done, 1500);
+  });
+}
+async function speak(text, btn){
   if (!("speechSynthesis" in window)) return alertBox("جهازك ما يدعم القراءة الصوتية");
   if (speechSynthesis.speaking) { speechSynthesis.cancel(); btn.textContent = "🔊"; return; }
-  const u = new SpeechSynthesisUtterance(plain(text).replace(/https?:\/\/\S+/g,"").slice(0, 4000));
-  const vs = speechSynthesis.getVoices(); const v = vs.find(x=>/^ar[-_]IQ/i.test(x.lang)) || vs.find(x=>/^ar/i.test(x.lang));
-  if (v) u.voice = v; u.lang = v?.lang || "ar-SA"; u.rate = 1;
+  const clean = plain(text).replace(/https?:\/\/\S+/g,"").slice(0, 4000);
+  const lg = textLang(clean), vs = await getVoicesReady();
+  let v = null;
+  for (const tag of LANG_TAGS[lg]) { v = vs.find(x => x.lang.toLowerCase().replace("_","-").startsWith(tag.toLowerCase())); if (v) break; }
+  if (!v && lg !== "en") return alertBox(lg === "ckb"
+    ? "جهازك ما بيه صوت كردي للقراءة. من إعدادات الجهاز ← اللغة ← تحويل النص إلى كلام، نزّل صوت كردي أو عربي."
+    : "جهازك ما بيه صوت عربي للقراءة. من إعدادات الجهاز ← اللغة ← تحويل النص إلى كلام (Text-to-speech)، نزّل اللغة العربية وارجع جرّب.");
+  const u = new SpeechSynthesisUtterance(clean);
+  if (v) u.voice = v; u.lang = v?.lang || LANG_TAGS[lg][0]; u.rate = 1;
   u.onend = u.onerror = () => btn.textContent = "🔊"; btn.textContent = "⏹";
   speechSynthesis.speak(u);
 }
@@ -579,7 +601,7 @@ function toggleMic(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return alertBox("جهازك ما يدعم الكتابة بالصوت، جرّب Chrome");
   if (REC) { REC.stop(); return; }
-  REC = new SR(); REC.lang = "ar-IQ"; REC.interimResults = true; REC.continuous = false;
+  REC = new SR(); REC.lang = ({ ar:"ar-IQ", ckb:"ckb-IQ", en:"en-US" })[textLang($("input").value || [...document.querySelectorAll(".msgrow.user")].pop()?.textContent || "")]; REC.interimResults = true; REC.continuous = false;
   const base = $("input").value ? $("input").value + " " : "";
   REC.onresult = e => { $("input").value = base + [...e.results].map(r=>r[0].transcript).join(""); autosize(); };
   REC.onend = () => { REC = null; $("micBtn").classList.remove("rec"); $("input").focus(); };
