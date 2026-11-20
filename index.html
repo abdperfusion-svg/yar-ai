@@ -717,9 +717,9 @@ async function showPlans(selId){
     <div class="plans">${PLANS.map(p=>planCard(p,p.id===sel)).join("")}</div>
     ${pending ? `<div class="pay">⏳ طلبك وصلنا وراح يتفعّل خلال ساعات بإذن الله.</div>` : `
     <div class="pay">للاشتراك بباقة <b>${selPlan.name}</b> حوّل <b>${iqd(selPlan.price_iqd)}</b><br>
-      عن طريق ${esc(SETTINGS.payment_method||'زين كاش')} على الرقم: <b>${esc(SETTINGS.payment_number||'—')}</b><br>
-      وبعدها اكتب رقمك اللي حوّلت منه هنا، ونفعّل اشتراكك لمدة شهر.</div>
-    <input class="field" id="sender" inputmode="tel" placeholder="رقمك اللي حوّلت منه" dir="ltr">
+      عن طريق <b>${esc(SETTINGS.payment_method||'سوبر كي')}</b> على الرقم: <b dir="ltr">${esc(SETTINGS.payment_number||'—')}</b><br>
+      وبعدها اكتب <b>رقم الوصل</b> هنا، ونفعّل اشتراكك لمدة شهر خلال ساعات.</div>
+    <input class="field" id="sender" inputmode="numeric" placeholder="رقم الوصل (رقم العملية)" dir="ltr">
     <input class="field" id="pnote" placeholder="ملاحظة (اختياري)">
     <button class="primary" id="sendReq">حوّلت، فعّلولي الاشتراك</button>
     <div class="msg" id="reqMsg"></div>`}`);
@@ -727,7 +727,7 @@ async function showPlans(selId){
   const btn = $("sendReq"); if (!btn) return;
   btn.onclick = async () => {
     const sender = $("sender").value.trim();
-    if (sender.replace(/\D/g,"").length < 10) { $("reqMsg").textContent = "اكتب رقم موبايل صحيح"; return; }
+    if (sender.replace(/\s/g,"").length < 4) { $("reqMsg").textContent = "اكتب رقم الوصل صحيح"; return; }
     btn.disabled = true;
     const { error } = await sb.from("payment_requests").insert({ plan: sel, sender, note: $("pnote").value.trim() || null });
     btn.disabled = false;
@@ -794,7 +794,7 @@ async function showAdmin(){
   let body = "";
   if (adminTab === "requests") {
     body = pend.length ? pend.map(q=>`<div class="row"><div class="t"><span class="em">${esc(byId[q.user_id]?.email||'—')}</span><span class="badge ${q.plan}">${PLANS.find(p=>p.id===q.plan)?.name}</span></div>
-      <div>حوّل من: <b dir="ltr">${esc(q.sender)}</b> · ${dateAr(q.created_at)}</div>${q.note?`<div style="color:var(--muted)">${esc(q.note)}</div>`:''}
+      <div>رقم الوصل: <b dir="ltr">${esc(q.sender)}</b> · ${dateAr(q.created_at)}</div>${q.note?`<div style="color:var(--muted)">${esc(q.note)}</div>`:''}
       <div class="acts"><button class="ok" data-act="approve" data-u="${q.user_id}" data-p="${q.plan}">✓ وصل المبلغ، فعّل شهر</button><button class="no" data-act="reject" data-r="${q.id}">✕ رفض</button></div></div>`).join("")
       : `<div class="sub">ماكو طلبات جديدة.</div>`;
   } else if (adminTab === "users") {
