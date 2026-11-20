@@ -358,8 +358,22 @@ function welcome(){
   const n = PROF.full_name ? "، " + esc(PROF.full_name.split(" ")[0]) : "";
   $("chat").innerHTML = `<div class="hello"><h2><span class="grad">${greet()}${n}</span></h2><p>شنو نسوي اليوم؟</p></div>`;
   const c = catOf(curCat);
-  $("sugg").innerHTML = (c.starters||[]).map((s,i)=>`<button data-i="${i}">${c.icon} ${esc(s)}</button>`).join("");
-  $("sugg").querySelectorAll("button").forEach(b=>b.onclick=()=>{ $("input").value = c.starters[b.dataset.i]; autosize(); $("input").focus(); });
+  // اقتراحات شخصية حسب شغل المستخدم (للفئة العامة)، وإلا اقتراحات الفئة
+  const mine = personalSugg();
+  const list = mine?.length ? mine.map(x=>({ t:`${x.icon} ${x.label}`, p:x.prompt })) : (c.starters||[]).map(x=>({ t:`${c.icon} ${x}`, p:x }));
+  $("sugg").innerHTML = list.map((x,i)=>`<button data-i="${i}" title="${esc(x.p)}">${esc(x.t)}</button>`).join("");
+  $("sugg").querySelectorAll("button").forEach(b=>b.onclick=()=>{ $("input").value = list[b.dataset.i].p; autosize(); $("input").focus(); });
+  if (!mine && PROF.specialty) fetchSugg();
+}
+const suggKey = () => "yar_sugg_" + [PROF.specialty, PROF.stage, PROF.institution].join("|").slice(0, 120);
+function personalSugg(){ try { return JSON.parse(localStorage.getItem(suggKey()) || "null"); } catch { return null; } }
+let suggBusy = false;
+async function fetchSugg(){
+  if (suggBusy) return; suggBusy = true;
+  try {
+    const { data } = await sb.functions.invoke("suggest", { body: {} });
+    if (data?.items?.length) { try { localStorage.setItem(suggKey(), JSON.stringify(data.items)); } catch {} if (!convId && $("main").classList.contains("empty")) welcome(); }
+  } catch {} finally { suggBusy = false; }
 }
 function setCatLabel(){
   const c = catOf(curCat); $("catLabel").textContent = `${c.icon} ${c.name}`;
@@ -577,7 +591,7 @@ function toggleMic(){
 let ATT = [];
 function renderAtt(){
   $("attList").innerHTML = ATT.map((f,i)=>`<div class="att">${f.mime.startsWith("image/")?"🖼️":"📄"}<span>${esc(f.name)}</span><button type="button" data-x="${i}">✕</button></div>`).join("");
-  $("attList").querySelectorAll("[data-x]").forEach(b=>b.onclick=()=>{ ATT.splice(+b.dataset.x,1); renderAtt(); });
+  $("attList").querySelectorAll("[data-x]").forEach(b=>b.onclick=()=>{ ATT.splice(+b.dataset.x,1); renderAtt(); saveAtt(); });
 }
 $("attBtn").onclick = () => $("fileIn").click();
 $("micBtn").onclick = () => toggleMic();
@@ -588,8 +602,10 @@ $("fileIn").onchange = async () => {
     const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(",")[1]); fr.readAsDataURL(f); });
     ATT.push({ name: f.name, mime: f.type || "application/octet-stream", data });
   }
-  $("fileIn").value = ""; renderAtt();
+  $("fileIn").value = ""; renderAtt(); saveAtt();
 };
+function saveAtt(){ try { sessionStorage.setItem("yar_att", JSON.stringify(ATT)); } catch { try { sessionStorage.removeItem("yar_att"); } catch {} } }
+try { const a = JSON.parse(sessionStorage.getItem("yar_att") || "[]"); if (Array.isArray(a) && a.length) { ATT = a; setTimeout(renderAtt, 0); } } catch {}
 function alertBox(m){ $("remain").textContent = "⚠️ " + m + " ·"; }
 
 /* ===== الدخول بـ Google + حماية Turnstile ===== */
@@ -659,7 +675,9 @@ async function openConv(id, cat){
 }
 async function send(){
   const text = $("input").value.trim();
+  if (imgMode && ATT.length) { alertBox("تعديل الصور المرفوعة جاي قريباً بالاستوديو. هسه: طفّي 🎨 وأرسل الصورة حتى يار يحللها ويوصفها، أو اكتب وصف لصورة جديدة"); return; }
   const files = imgMode ? [] : ATT.slice();
+  try { localStorage.removeItem("yar_draft"); sessionStorage.removeItem("yar_att"); } catch {}
   if ((!text && !files.length) || busy) return;
   ATT = []; renderAtt();
   busy = true; $("sendBtn").disabled = true; $("input").value = ""; autosize();
@@ -718,7 +736,7 @@ async function send(){
 }
 function autosize(){ const t=$("input"); t.style.height="auto"; t.style.height=Math.min(t.scrollHeight,180)+"px"; }
 
-$("input").addEventListener("input", autosize);
+$("input").addEventListener("input", () => { autosize(); try { localStorage.setItem("yar_draft", $("input").value); } catch {} });
 $("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && window.innerWidth > 760) { e.preventDefault(); send(); } });
 $("composer").onsubmit = e => { e.preventDefault(); send(); };
 const newChat = () => { convId = null; SKILL = null; renderSkillChip(); saveConv(); setCatLabel(); welcome(); loadConvs(); closeSide(); $("input").focus(); };
@@ -782,6 +800,7 @@ async function loadAccount(){
   PLANS = p.data || []; SETTINGS = Object.fromEntries((s.data||[]).map(r=>[r.key,r.value]));
   ME = me.data || { plan:"free" }; IS_ADMIN = !!adm.data; PROF = me.data || {};
   if (PROF.category && !convId && !localStorage.getItem("yar_conv")) { curCat = PROF.category; setCatLabel(); welcome(); }
+  else if (!convId && $("main").classList.contains("empty")) welcome();
   if (me.data && !PROF.onboarded) { const go = () => CATS.length ? showProfile(true) : setTimeout(go, 200); go(); }
   const active = ME.plan !== "free" && ME.plan_until && new Date(ME.plan_until) > new Date();
   if (!active) ME.plan = "free";
@@ -984,7 +1003,13 @@ function render(session){
     let last = null; try { last = JSON.parse(localStorage.getItem("yar_conv") || "null"); } catch {}
     sb.from("categories").select("*").order("sort").then(({data}) => {
       CATS = data || [];
-      if (last?.id) openConv(last.id, last.cat); else { setCatLabel(); welcome(); loadConvs(); }
+      if (last?.id) openConv(last.id, last.cat);
+      else sb.from("conversations").select("id,category,updated_at").order("updated_at",{ascending:false}).limit(1).then(({ data: r }) => {
+        const c = r?.[0];
+        if (c && Date.now() - new Date(c.updated_at).getTime() < 10 * 60 * 1000) openConv(c.id, c.category);
+        else { setCatLabel(); welcome(); loadConvs(); }
+      });
+      try { const d = localStorage.getItem("yar_draft"); if (d) { $("input").value = d; autosize(); } } catch {}
     });
     welcome(); loadAccount();
   }
