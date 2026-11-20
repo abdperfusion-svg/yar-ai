@@ -163,6 +163,22 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
 .stats div{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
 .stats b{display:block;font-size:22px}.stats span{font-size:12px;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+#printBox{display:none}
+@media print{
+  body.printing{background:#fff!important;color:#111;overflow:visible;display:block}
+  body.printing > *:not(#printBox){display:none!important}
+  body.printing #printBox{display:block}
+  @page{size:A4;margin:16mm 14mm}
+  .pdf{font-family:'IBM Plex Sans Arabic',sans-serif;color:#1a1a1a;font-size:12.5pt;line-height:1.9;direction:rtl}
+  .pdf h1{font-size:20pt;color:#5b21b6;margin:0 0 10px}
+  .pdf h2{font-size:15pt;color:#6d28d9;margin:18px 0 6px;border-bottom:1px solid #e9e3fb;padding-bottom:3px;break-after:avoid}
+  .pdf h3{font-size:13pt;margin:12px 0 4px;break-after:avoid}
+  .pdf p{margin:0 0 8px}.pdf ul,.pdf ol{margin:4px 0 10px;padding-right:22px}
+  .pdf table{border-collapse:collapse;width:100%;margin:8px 0}.pdf th,.pdf td{border:1px solid #bbb;padding:5px 8px;text-align:right}.pdf th{background:#f3effe}
+  .pdf pre{direction:ltr;text-align:left;background:#f5f5f5;padding:8px;border-radius:6px;white-space:pre-wrap;font-size:10pt}
+  .pdf strong{color:#000}.pdf li,.pdf tr{break-inside:avoid}
+  .pdf .foot{margin-top:20px;border-top:1px solid #ddd;padding-top:6px;font-size:9pt;color:#888;text-align:center}
+}
 </style>
 </head>
 <body>
@@ -287,9 +303,22 @@ function bubble(role, text){
 }
 function addCopy(d, text){
   const t = document.createElement("div"); t.className = "tools";
-  t.innerHTML = `<button title="نسخ">⧉ نسخ</button>`;
-  t.firstChild.onclick = async () => { try { await navigator.clipboard.writeText(text); t.firstChild.textContent = "✓ انسخ"; setTimeout(()=>t.firstChild.textContent="⧉ نسخ",1500); } catch {} };
+  t.innerHTML = `<button title="نسخ">⧉ نسخ</button><button title="حفظ كـ PDF">⬇ PDF</button>`;
+  const [cp, pdf] = t.querySelectorAll("button");
+  cp.onclick = async () => { try { await navigator.clipboard.writeText(text); cp.textContent = "✓ انسخ"; setTimeout(()=>cp.textContent="⧉ نسخ",1500); } catch {} };
+  pdf.onclick = () => makePdf(text);
   d.querySelector(".col").appendChild(t);
+}
+
+/* ===== تحويل الجواب لـ PDF (عن طريق طباعة المتصفح: عربي نظيف ومجاني) ===== */
+function makePdf(text){
+  let box = $("printBox");
+  if (!box) { box = document.createElement("div"); box.id = "printBox"; document.body.appendChild(box); }
+  box.innerHTML = `<div class="pdf">${fmt(text)}<div class="foot">صُنع بواسطة YAR AI · YAR Studio</div></div>`;
+  const t = (text.match(/^#\s+(.+)$/m)?.[1] || "YAR AI").replace(/[#*]/g,"").trim().slice(0,60);
+  const oldTitle = document.title; document.title = t;
+  document.body.classList.add("printing");
+  setTimeout(() => { window.print(); setTimeout(() => { document.body.classList.remove("printing"); document.title = oldTitle; }, 500); }, 100);
 }
 function closeSide(){ $("side").classList.remove("open"); $("scrim").classList.remove("open"); }
 $("menuBtn").onclick = () => { $("side").classList.add("open"); $("scrim").classList.add("open"); };
@@ -549,8 +578,11 @@ async function showAdmin(){
 }
 $("adminBtn").onclick = () => { adminTab = "requests"; showAdmin(); };
 
+let wasIn = null;
 function render(session){
   const inApp = !!session;
+  if (inApp === wasIn) return;   // تجديد الجلسة أو الرجوع للتطبيق ما يصفّر المحادثة
+  wasIn = inApp;
   $("auth").style.display = inApp ? "none" : "flex";
   $("app").style.display = inApp ? "flex" : "none";
   if (!inApp) { $("adminBtn").style.display = "none"; $("expiryBar").style.display = "none"; }
