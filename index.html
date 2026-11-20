@@ -807,10 +807,12 @@ async function send(){
             const o = data.overlay;
             const png = o.kind === "poster" ? await drawPoster(data.image, o) : o.kind === "identity" ? await drawIdentity(data.image, o) : await addArabicText(data.image, o.text, o.pos);
             const r = await sb.functions.invoke("image", { body: { action: "overlay", conversation_id: data.conversation_id, old_url: data.image, png } });
+            if (r.data?.image) data._final = r.data.image;
             if (r.data?.image && im) { im.src = r.data.image; const a = im.closest("a"); if (a) a.href = r.data.image; }
           } catch (e) { console.error("overlay", e); }
           if (im) im.style.opacity = ""; document.getElementById("ovl")?.remove();
         }
+        if (data?.image && data.overlay?.kind !== "identity") addVideoBtn(pending, data.overlay?.kind === "poster" ? data.image : (data._final || data.image), data.overlay?.kind === "poster" ? data.overlay : null);
       }
       return;
     }
@@ -999,38 +1001,77 @@ function lines2(x, text, maxW){
 }
 const hexA = (hex, a) => { const n = parseInt((hex || "#0f5d3a").slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
 // تصميم بوست أو ستوري: العنوان فوگ، شريط أخضر، الصورة بالنص، الرقم والموقع جوّا
-async function drawPoster(url, d){
-  try { await document.fonts.load('900 80px Cairo'); } catch {}
-  const img = await loadImg(url);
-  const W = img.naturalWidth, H = img.naturalHeight, col = /^#[0-9a-f]{6}$/i.test(d.color) ? d.color : "#0f5d3a";
-  const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
-  x.drawImage(img, 0, 0);
+// يرسم التصميم بلحظة معيّنة T (بالثواني). للصورة الثابتة T = Infinity
+function posterFrame(x, img, d, W, H, T){
+  const col = /^#[0-9a-f]{6}$/i.test(d.color) ? d.color : "#0f5d3a";
+  const ease = v => 1 - Math.pow(1 - Math.min(1, Math.max(0, v)), 3);
+  const P = (a, b) => T === Infinity ? 1 : ease((T - a) / (b - a)); // تقدّم كل عنصر
+  const zoom = T === Infinity ? 1 : 1.14 - 0.14 * Math.min(1, T / 8);
+  x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 1; x.fillStyle = "#000"; x.fillRect(0, 0, W, H);
+  const zw = W * zoom, zh = H * zoom; x.drawImage(img, (W - zw) / 2, (H - zh) / 2, zw, zh);
+  x.globalAlpha = P(0, .7);
   let g = x.createLinearGradient(0, 0, 0, H * 0.45); g.addColorStop(0, hexA(col, .97)); g.addColorStop(.55, hexA(col, .8)); g.addColorStop(1, hexA(col, 0));
   x.fillStyle = g; x.fillRect(0, 0, W, H * 0.45);
+  x.globalAlpha = P(1.4, 2.1);
   g = x.createLinearGradient(0, H * 0.68, 0, H); g.addColorStop(0, hexA(col, 0)); g.addColorStop(.5, hexA(col, .85)); g.addColorStop(1, hexA(col, .98));
   x.fillStyle = g; x.fillRect(0, H * 0.68, W, H * 0.32);
-  x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl"; x.fillStyle = "#fff";
+  x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
   const u = Math.min(W, H * 0.62);
-  let y = H * 0.055;
-  if (d.brand) { x.font = `900 ${Math.round(u * 0.05)}px Cairo, sans-serif`; x.fillText(d.brand, W / 2, y); y += u * 0.09; }
+  let y = H * 0.055, p;
+  if (d.brand) { p = P(.3, .9); x.globalAlpha = p; x.fillStyle = "#fff"; x.font = `900 ${Math.round(u * 0.05)}px Cairo, sans-serif`; x.fillText(d.brand, W / 2, y - (1 - p) * u * .04); y += u * 0.09; }
   let ts = Math.round(u * 0.095); x.font = `900 ${ts}px Cairo, sans-serif`;
   let L = lines2(x, d.title, W * 0.86);
   while (L.some(t => x.measureText(t).width > W * 0.88) && ts > 24) { ts -= 2; x.font = `900 ${ts}px Cairo, sans-serif`; L = lines2(x, d.title, W * 0.86); }
-  x.shadowColor = "rgba(0,0,0,.25)"; x.shadowBlur = ts * 0.2;
-  L.forEach((t, i) => x.fillText(t, W / 2, y + i * ts * 1.15)); x.shadowBlur = 0;
+  x.shadowColor = "rgba(0,0,0,.25)"; x.shadowBlur = ts * 0.2; x.fillStyle = "#fff";
+  L.forEach((t, i) => { p = P(.7 + i * .25, 1.3 + i * .25); x.globalAlpha = p; x.fillText(t, W / 2 + (1 - p) * W * .08, y + i * ts * 1.15); }); x.shadowBlur = 0;
   y += L.length * ts * 1.15 + u * 0.02;
-  if (d.subtitle) { let ss = Math.round(u * 0.034); x.font = `800 ${ss}px Cairo, sans-serif`; while (x.measureText(d.subtitle).width > W * 0.8 && ss > 14) { ss -= 1; x.font = `800 ${ss}px Cairo, sans-serif`; } pill(x, W / 2, y, d.subtitle, ss, "#3ddc84", "#0b2e1c"); }
+  if (d.subtitle) {
+    p = P(1.4, 1.9); x.globalAlpha = p;
+    let ss = Math.round(u * 0.034); x.font = `800 ${ss}px Cairo, sans-serif`; while (x.measureText(d.subtitle).width > W * 0.8 && ss > 14) { ss -= 1; x.font = `800 ${ss}px Cairo, sans-serif`; }
+    x.save(); x.translate(W / 2, y); x.scale(.85 + .15 * p, .85 + .15 * p); pill(x, 0, 0, d.subtitle, ss, "#3ddc84", "#0b2e1c"); x.restore();
+  }
   let by = H * 0.955;
   const fs = Math.round(u * 0.03), parts = [d.phone, d.site].filter(Boolean);
   if (parts.length) {
+    p = P(2.3, 2.9); x.globalAlpha = p;
     x.font = `800 ${fs}px Cairo, sans-serif`;
     const ws = parts.map(t => x.measureText(t).width + fs * 1.3), gap = fs, tot = ws.reduce((a, b) => a + b, 0) + gap * (parts.length - 1);
-    let cx = W / 2 + tot / 2;
-    parts.forEach((t, i) => { cx -= ws[i] / 2; pill(x, cx, by, t, fs, i === 0 ? "#3ddc84" : "#ffffff", i === 0 ? "#0b2e1c" : col); cx -= ws[i] / 2 + gap; });
+    let cx = W / 2 + tot / 2; const yy = by + (1 - p) * u * .06;
+    parts.forEach((t, i) => { cx -= ws[i] / 2; pill(x, cx, yy, t, fs, i === 0 ? "#3ddc84" : "#ffffff", i === 0 ? "#0b2e1c" : col); cx -= ws[i] / 2 + gap; });
     by -= fs * 2.2;
   }
-  if (d.cta) { x.font = `800 ${Math.round(u * 0.032)}px Cairo, sans-serif`; x.fillStyle = "#fff"; x.textAlign = "center"; x.fillText(d.cta, W / 2, by); }
+  if (d.cta) { p = P(1.9, 2.5); x.globalAlpha = p; x.font = `800 ${Math.round(u * 0.032)}px Cairo, sans-serif`; x.fillStyle = "#fff"; x.textAlign = "center"; x.fillText(d.cta, W / 2, by + (1 - p) * u * .05); }
+  x.globalAlpha = 1;
+}
+async function drawPoster(url, d){
+  try { await document.fonts.load('900 80px Cairo'); } catch {}
+  const img = await loadImg(url);
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  posterFrame(c.getContext("2d"), img, d, W, H, Infinity);
   return c.toDataURL("image/png").split(",")[1];
+}
+// فيديو مجاني: يتسوّى داخل الموبايل، الصورة تقرّب شوية شوية والكلام يطلع قطعة قطعة
+async function makeVideo(url, d, onProgress){
+  try { await document.fonts.load('900 80px Cairo'); } catch {}
+  const img = await loadImg(url);
+  let W = img.naturalWidth, H = img.naturalHeight; const k = Math.min(1, 1080 / Math.max(W, H) * 1.0); W = Math.round(W * k / 2) * 2; H = Math.round(H * k / 2) * 2;
+  const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
+  const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"];
+  const mime = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
+  if (!mime || !c.captureStream) throw new Error("no-recorder");
+  const stream = c.captureStream(30), chunks = [];
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  const DUR = 8;
+  const draw = T => d ? posterFrame(x, img, d, W, H, T) : (() => { const z = 1.15 - 0.15 * Math.min(1, T / DUR); x.drawImage(img, (W - W * z) / 2, (H - H * z) / 2, W * z, H * z); })();
+  draw(0);
+  const done = new Promise(r => rec.onstop = r);
+  rec.start(250);
+  const t0 = performance.now();
+  await new Promise(res => { const step = () => { const T = (performance.now() - t0) / 1000; draw(Math.min(T, DUR)); onProgress?.(Math.min(1, T / DUR)); if (T < DUR + .3) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
+  rec.stop(); await done;
+  return new Blob(chunks, { type: mime.split(";")[0] });
 }
 // لوحة هوية بصرية: الشعار والاسم والألوان والخط
 async function drawIdentity(url, d){
@@ -1062,6 +1103,24 @@ function fitText(x, text, maxW, maxH){
   let size = Math.round(maxH);
   do { x.font = `900 ${size}px Cairo, sans-serif`; if (x.measureText(text).width <= maxW) break; size -= 2; } while (size > 14);
   return size;
+}
+function addVideoBtn(pending, url, design){
+  const b = document.createElement("button"); b.className = "chip"; b.textContent = "🎬 سوّيها فيديو (مجاني)";
+  b.style.cssText = "margin-top:10px;padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:var(--panel)";
+  pending.querySelector(".body").appendChild(b);
+  b.onclick = async () => {
+    b.disabled = true; b.textContent = "🎬 يسوي الفيديو… ٠٪";
+    try {
+      const blob = await makeVideo(url, design, p => b.textContent = `🎬 يسوي الفيديو… ${Math.round(p * 100).toLocaleString("ar-IQ")}٪`);
+      const vurl = URL.createObjectURL(blob), ext = blob.type.includes("mp4") ? "mp4" : "webm";
+      const box = document.createElement("div"); box.style.marginTop = "10px";
+      box.innerHTML = `<video src="${vurl}" controls playsinline loop style="width:100%;max-width:360px;border-radius:14px;display:block"></video><a href="${vurl}" download="yar-video.${ext}" class="chip" style="display:inline-block;margin-top:8px;padding:8px 14px;border-radius:20px;border:1px solid var(--line)">⬇️ نزّل الفيديو</a>`;
+      b.replaceWith(box); box.querySelector("video").play().catch(() => {});
+    } catch (e) {
+      console.error(e); b.disabled = false;
+      b.textContent = e?.message === "no-recorder" ? "متصفحك ما يدعم صنع الفيديو، جرّب Chrome" : "ما زبط الفيديو، اضغط وجرّب مرة ثانية";
+    }
+  };
 }
 function showPoints(n){
   if (typeof n !== "number") return;
