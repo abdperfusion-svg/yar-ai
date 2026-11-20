@@ -127,6 +127,7 @@ footer.credit{text-align:center;font-size:12px;color:var(--muted);padding:6px 0 
     <input id="email" type="email" placeholder="الإيميل" autocomplete="email">
     <input id="pass" type="password" placeholder="كلمة السر (٦ أحرف أو أكثر)" autocomplete="current-password">
     <button class="primary" id="authBtn">دخول</button>
+    <button class="link" id="forgotBtn" style="margin-top:4px">نسيت كلمة السر؟</button>
     <button class="link" id="toggleAuth">ما عندك حساب؟ سوّي حساب جديد</button>
     <div class="msg" id="authMsg"></div>
   </div>
@@ -265,6 +266,27 @@ $("authBtn").onclick = async () => {
   if (signup && !r.data.session) $("authMsg").textContent = "✅ دزّينالك رسالة تأكيد على الإيميل، افتحها وبعدين سجّل دخول";
 };
 $("logoutBtn").onclick = () => sb.auth.signOut();
+$("forgotBtn").onclick = async () => {
+  const email = $("email").value.trim();
+  if (!email.includes("@")) { $("authMsg").textContent = "اكتب إيميلك فوگ أول، وبعدين اضغط «نسيت كلمة السر؟»"; return; }
+  $("authMsg").textContent = "لحظة…";
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  $("authMsg").textContent = error ? "ما انرسل، جرّب بعد شوية" : "✅ دزّينالك رابط على إيميلك. افتحه وتطلعلك خانة كلمة سر جديدة (إذا ما لگيته شوف السبام).";
+};
+function showNewPassword(){
+  openModal(`<h3>🔑 كلمة سر جديدة</h3><div class="sub">اكتب كلمة سر جديدة (٦ أحرف أو أكثر).</div>
+    <input class="field" id="np1" type="password" placeholder="كلمة السر الجديدة" dir="ltr">
+    <input class="field" id="np2" type="password" placeholder="أعدها مرة ثانية" dir="ltr">
+    <button class="primary" id="saveNp">حفظ</button><div class="msg" id="npMsg"></div>`);
+  $("saveNp").onclick = async () => {
+    const a = $("np1").value, b = $("np2").value;
+    if (a.length < 6) { $("npMsg").textContent = "لازم ٦ أحرف أو أكثر"; return; }
+    if (a !== b) { $("npMsg").textContent = "الكلمتين مو متطابقات"; return; }
+    const { error } = await sb.auth.updateUser({ password: a });
+    $("npMsg").textContent = error ? "ما انحفظت، جرّب مرة ثانية" : "✅ تغيّرت كلمة السر";
+    if (!error) setTimeout(closeModal, 1200);
+  };
+}
 
 /* ===== الاشتراكات ===== */
 let PLANS = [], SETTINGS = {}, ME = null, IS_ADMIN = false;
@@ -438,7 +460,7 @@ function render(session){
     welcome(); loadAccount();
   }
 }
-sb.auth.onAuthStateChange((_e, s) => render(s));
+sb.auth.onAuthStateChange((e, s) => { render(s); if (e === "PASSWORD_RECOVERY") setTimeout(showNewPassword, 600); });
 const { data: { session } } = await sb.auth.getSession(); render(session);
 </script>
 </body>
