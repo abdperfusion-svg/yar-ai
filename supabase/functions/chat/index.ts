@@ -249,6 +249,9 @@ Deno.serve(async (req) => {
       : deep ? [...(Deno.env.get("GEMINI_DEEP_MODELS") ?? "gemini-pro-latest,gemini-3.8-flash").split(","), ...MODELS] : MODELS;
     let sys = system + `\n\nتاريخ اليوم: ${new Date().toISOString().slice(0, 10)}. إذا السؤال يحتاج معلومات حديثة (أسعار، أخبار، أحداث، أشياء تتغير) استخدم بحث Google.`;
     if (deep) sys += `\n\nوضع التفكير العميق مفعّل: حلّل السؤال خطوة بخطوة بينك وبين نفسك، تأكد من كل رقم ومعلومة، وفكّر بالاحتمالات قبل ما تجاوب. اكتب الجواب النهائي مرتب ومفصّل وبدون ما تعرض خطوات تفكيرك الداخلية.`;
+    const imgs = att.filter((f: { mime: string }) => f.mime.startsWith("image/"));
+    if (imgs.length) sys += `\n\nالمستخدم رفع صورة. تكدر تشوفها وتحللها وتوصفها وتطلع النص منها. إذا طلب تعديل الصورة نفسها (حذف خلفية، تغيير لون، إضافة كتابة...) گله بلطف إن تعديل الصور المرفوعة جاي قريباً بيار، وهسه يكدر يسوي صورة جديدة من زر 🎨 داخل علامة +، واكتبله وصف جاهز للصورة المطلوبة يستخدمه.`;
+    const useSearch = !yt.length && !att.length; // ويا الملفات نخلي البحث حتى يكون الجواب أسرع وما يعلّق
     const expertModels = (Deno.env.get("EXPERT_MODELS") ?? "anthropic/claude-sonnet-4.5,x-ai/grok-4").split(",");
 
     // يولّد الجواب (ببث أو بدون) ويرجع النص الكامل
@@ -259,8 +262,8 @@ Deno.serve(async (req) => {
           try { const t = await openrouter(m.trim(), sys, contents); onText?.(t); return t; } catch (e) { console.error("expert", m, String(e)); }
         }
       }
-      if (onText) return await geminiStream(sys, contents, !yt.length, gModels, onText);
-      let draft = await gemini(sys, contents, false, !yt.length, gModels);
+      if (onText) return await geminiStream(sys, contents, useSearch, gModels, onText);
+      let draft = await gemini(sys, contents, false, useSearch, gModels);
       if (plan?.review) {
         try { draft = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `الفئة: ${catRow?.name}\nرسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]); } catch { /* نخلي المسودة */ }
       }
