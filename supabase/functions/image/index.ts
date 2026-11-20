@@ -12,8 +12,10 @@ Rules: describe subject, setting, composition, lighting, style, camera/lens if p
 People: Iraqi or Kurdish looking, local styling. Iraqi men wear Iraqi dress (shemagh wrapped as jarawiya, striped zboun with sitra jacket, or modern clothes) never Gulf agal or white Gulf dishdasha. Kurdish context means Kurdish clothing.
 TEXT RULE (very important): image models cannot write Arabic or Kurdish correctly, so the image must contain NO text at all: no letters, words, numbers, signs, labels or watermarks. If the user wants any words (a logo name, a title, a slogan, a price, a phone), copy those exact words (in the user's language and spelling) into "text", and design the picture with clean empty space for them: for a logo use a simple centered emblem/icon on a plain background with nothing written; for posters keep a calm empty area at the top or bottom. Always end the prompt with: "no text, no letters, no typography, no watermark".
 "pos" says where the words go: "logo" (written under the emblem), "bottom" or "top". If the user wants no words, "text" is "".
+DESIGN MODE: if the user asks for an ad, post, story, poster, flyer or social-media design (اعلان، بوست، ستوري، بوستر، تصميم), also fill "design": {"brand": business name, "title": a short catchy headline (2-5 words) in the user's language, "subtitle": one short supporting line, "cta": a short call to action like "اسألي واطلبي من صيدلية ريحانة", "phone": phone if given, "site": website if given, "color": a deep brand hex colour (e.g. "#0f5d3a" green, "#1d3b8f" blue) matching the request}. Use only names, phones and sites the user gave; never invent them (leave "" instead). For design mode: aspect "9:16" for a story, "4:5" for a post; the picture is a realistic photo of the subject in the middle of the frame, with the top 30% and bottom 15% of the frame calm, soft and empty (plain or softly blurred background) so text can sit there, and the subject's face never at the very top. Leave "text" empty in design mode.
+IDENTITY MODE: if the user asks for a logo, visual identity or branding (شعار، لوكو، هوية بصرية، براند، علامة تجارية), fill "identity": {"brand": the business name exactly as the user wrote it, "tagline": a short slogan in the user's language, "colors": three brand hex colours (main, accent, dark) that fit the business}. The prompt is then ONLY the logo symbol: a clean modern flat vector emblem/icon that represents the business (for example a cheese wedge with a drop of milk for a cheese factory), using the brand colours, centered on a pure white background, generous empty margin, simple shapes, professional brand mark, no text. aspect "1:1". Leave "text" empty and "design" null in identity mode.
 No nudity, no real public figures, no brand logos.
-Return JSON only: {"prompt":"...","aspect":"1:1|4:5|9:16|16:9","caption":"one short Iraqi-Arabic sentence describing exactly what was drawn","text":"","pos":"bottom"}`;
+Return JSON only: {"prompt":"...","aspect":"1:1|4:5|9:16|16:9","caption":"one short Iraqi-Arabic sentence describing exactly what was drawn","text":"","pos":"bottom","design":null,"identity":null}`;
 
 async function gemText(system: string, text: string) {
   // ١) Cloudflare (رصيد مجاني منفصل عن Google وسريع)
@@ -23,7 +25,7 @@ async function gemText(system: string, text: string) {
     try {
       const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast`, {
         method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: T(15000),
-        body: JSON.stringify({ messages: [{ role: "system", content: system }, { role: "user", content: text }], max_tokens: 600, temperature: 0.7 }) });
+        body: JSON.stringify({ messages: [{ role: "system", content: system }, { role: "user", content: text }], max_tokens: 700, temperature: 0.7 }) });
       const j = r.ok ? await r.json() : null;
       let out = j?.result?.response;
       if (out && typeof out !== "string") out = JSON.stringify(out);
@@ -201,13 +203,18 @@ Deno.serve(async (req) => {
       pointPaid = true; pointsLeft = left;
     }
 
-    let spec = { prompt: text, aspect: "1:1", caption: "هاي الصورة اللي طلبتها", text: "", pos: "bottom" };
+    let spec: { prompt: string; aspect: string; caption: string; text: string; pos: string; design?: Record<string, string> | null; identity?: { brand?: string; tagline?: string; colors?: string[] } | null } = { prompt: text, aspect: "1:1", caption: "هاي الصورة اللي طلبتها", text: "", pos: "bottom", design: null };
     const tp = Date.now();
     try { spec = { ...spec, ...JSON.parse(await gemText(PROMPTER, hasRef ? `The user uploaded a photo and wants it transformed: "${text}". Write the prompt for the final edited image (same subject and composition, new style).` : text)) }; } catch { /* raw text */ }
     console.log("prompt-time", Date.now() - tp, "ms");
     if (!SIZES[spec.aspect]) spec.aspect = "1:1";
     const overlayText = hasRef ? "" : String(spec.text ?? "").trim().slice(0, 80);
-    if (overlayText && !/no text/i.test(spec.prompt)) spec.prompt += ". no text, no letters, no typography, no watermark";
+    const d = !hasRef && spec.design && typeof spec.design === "object" && spec.design.title ? spec.design : null;
+    const design = d ? Object.fromEntries(["brand", "title", "subtitle", "cta", "phone", "site", "color"].map((k) => [k, String(d[k] ?? "").trim().slice(0, 90)])) : null;
+    const idn = !hasRef && spec.identity && typeof spec.identity === "object" && spec.identity.brand ? spec.identity : null;
+    const identity = idn ? { brand: String(idn.brand).slice(0, 60), tagline: String(idn.tagline ?? "").slice(0, 90), colors: (Array.isArray(idn.colors) ? idn.colors : []).filter((c) => /^#[0-9a-f]{6}$/i.test(String(c))).slice(0, 3) } : null;
+    if (identity) spec.aspect = "1:1";
+    if ((overlayText || design || identity) && !/no text/i.test(spec.prompt)) spec.prompt += ". no text, no letters, no typography, no watermark";
 
     // صور Google المدفوعة بس إذا فعّلنا الدفع (GEMINI_IMAGES=1)، غير هيج نروح للمجاني مباشرة بدون انتظار
     const t0 = Date.now();
@@ -245,7 +252,7 @@ Deno.serve(async (req) => {
       { conversation_id: convId, user_id: user.id, role: "assistant", content: reply },
     ]);
     await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
-    return json({ conversation_id: convId, reply, image: imageUrl, remaining_images: pointPaid ? 0 : limit - (used ?? 0), points: pointsLeft, overlay: overlayText ? { text: overlayText, pos: ["logo", "top", "bottom"].includes(spec.pos) ? spec.pos : "bottom" } : null });
+    return json({ conversation_id: convId, reply, image: imageUrl, remaining_images: pointPaid ? 0 : limit - (used ?? 0), points: pointsLeft, overlay: identity ? { kind: "identity", ...identity } : design ? { kind: "poster", ...design } : overlayText ? { text: overlayText, pos: ["logo", "top", "bottom"].includes(spec.pos) ? spec.pos : "bottom" } : null });
   } catch (e) {
     console.error(String(e));
     return json({ error: "صار خلل بتوليد الصورة، جرّب مرة ثانية" }, 500);
