@@ -40,7 +40,12 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;text-align:right;color:var(--text);font-size:14px}
 .chip b{display:block;margin-bottom:2px}
-.chip span{color:var(--muted);font-size:12.5px}
+.chip span{color:var(--muted);font-size:13px}
+.cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.cat{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 10px;color:var(--text);display:flex;flex-direction:column;align-items:center;gap:2px}
+.cat span{font-size:26px}.cat b{font-size:14.5px}.cat small{color:var(--muted);font-size:11.5px;line-height:1.5}
+.cat.on{border-color:var(--a2);background:var(--panel2);box-shadow:0 0 0 2px rgba(255,111,174,.2)}
+@media(max-width:600px){header .icon-btn{padding:6px 8px;font-size:12.5px}}
 .bubble{max-width:760px;margin:0 auto 14px;display:flex;gap:10px}
 .bubble .who{width:32px;height:32px;border-radius:10px;flex:none;display:grid;place-items:center;font-weight:800;font-size:14px}
 .bubble.user{flex-direction:row-reverse}
@@ -107,6 +112,7 @@ footer.credit{text-align:center;font-size:12px;color:var(--muted);padding:6px 0 
   </div>
   <div style="display:flex;gap:6px">
     <button class="icon-btn" id="adminBtn" style="display:none">لوحة التحكم</button>
+    <button class="icon-btn" id="memBtn" style="display:none">🧠 ذاكرتي</button>
     <button class="icon-btn" id="planBtn" style="display:none">⭐ باقتي</button>
     <button class="icon-btn" id="logoutBtn" style="display:none">خروج</button>
   </div>
@@ -138,7 +144,7 @@ footer.credit{text-align:center;font-size:12px;color:var(--muted);padding:6px 0 
         <textarea id="input" rows="1" placeholder="اكتب لـ يار… (Enter للإرسال)"></textarea>
         <button class="send" id="sendBtn" type="submit" aria-label="إرسال">➤</button>
       </div>
-      <div class="meta"><span id="remain"></span><span>يار يراجع أجوبته، بس ممكن يغلط. تأكد من المعلومات المهمة.</span></div>
+      <div class="meta"><span><span id="catLabel">💬 عام</span> · <span id="remain"></span></span><span>يار يراجع أجوبته، بس ممكن يغلط. تأكد من المعلومات المهمة.</span></div>
     </form>
   </main>
 </div>
@@ -162,11 +168,19 @@ const STARTERS = [
 function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
 function fmt(s){return esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}
 
+let CATS = [], curCat = "general";
+const catOf = id => CATS.find(c=>c.id===id) || { id:"general", name:"عام", icon:"💬", starters:[] };
 function welcome(){
-  $("chat").innerHTML = `<div class="welcome"><h2 class="grad">شلونك؟ 👋</h2><p>آني يار، شنو نسوي اليوم؟</p><div class="chips">${
-    STARTERS.map((s,i)=>`<button class="chip" data-i="${i}"><b>${s[0]}</b><span>${esc(s[1]).slice(0,60)}…</span></button>`).join("")}</div></div>`;
-  $("chat").querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ $("input").value = STARTERS[b.dataset.i][1]; send(); });
+  if (!CATS.length) { $("chat").innerHTML = `<div class="welcome"><h2 class="grad">شلونك؟ 👋</h2></div>`; return; }
+  const c = catOf(curCat);
+  $("chat").innerHTML = `<div class="welcome"><h2 class="grad">شلونك؟ 👋</h2><p>آني يار. اختار مجالك حتى أشتغل وياك بطريقته:</p>
+    <div class="cats">${CATS.map(x=>`<button class="cat ${x.id===curCat?'on':''}" data-c="${x.id}"><span>${x.icon}</span><b>${x.name}</b><small>${esc(x.blurb)}</small></button>`).join("")}</div>
+    <p style="margin:18px 0 10px">أمثلة من <b>${c.icon} ${c.name}</b>:</p>
+    <div class="chips">${(c.starters||[]).map((s,i)=>`<button class="chip" data-i="${i}"><span>${esc(s)}</span></button>`).join("")}</div></div>`;
+  $("chat").querySelectorAll(".cat").forEach(b=>b.onclick=()=>{ curCat=b.dataset.c; welcome(); setCatLabel(); });
+  $("chat").querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ $("input").value = c.starters[b.dataset.i]; send(); });
 }
+function setCatLabel(){ const c = catOf(curCat); $("catLabel").textContent = `${c.icon} ${c.name}`; }
 function bubble(role, text){
   if ($("chat").querySelector(".welcome")) $("chat").innerHTML = "";
   const d = document.createElement("div");
@@ -187,17 +201,17 @@ function addCopy(d, text){
 }
 
 async function loadConvs(){
-  const { data } = await sb.from("conversations").select("id,title").order("updated_at",{ascending:false}).limit(50);
+  const { data } = await sb.from("conversations").select("id,title,category").order("updated_at",{ascending:false}).limit(50);
   $("convs").innerHTML = "";
   (data||[]).forEach(c=>{
     const el = document.createElement("div");
     el.className = "conv" + (c.id === convId ? " active" : "");
-    el.textContent = c.title; el.onclick = () => openConv(c.id);
+    el.textContent = `${catOf(c.category).icon} ${c.title}`; el.onclick = () => openConv(c.id, c.category);
     $("convs").appendChild(el);
   });
 }
-async function openConv(id){
-  convId = id; $("side").classList.remove("open");
+async function openConv(id, cat){
+  convId = id; curCat = cat || "general"; setCatLabel(); $("side").classList.remove("open");
   const { data } = await sb.from("messages").select("role,content").eq("conversation_id", id).order("created_at");
   $("chat").innerHTML = "";
   (data||[]).forEach(m=>bubble(m.role, m.content));
@@ -211,7 +225,7 @@ async function send(){
   bubble("user", text);
   const pending = bubble("ai", null);
   try {
-    const { data, error } = await sb.functions.invoke("chat", { body: { conversation_id: convId, message: text } });
+    const { data, error } = await sb.functions.invoke("chat", { body: { conversation_id: convId, message: text, category: curCat } });
     let reply, err, upgrade = false;
     if (error) { try { const j = await error.context.json(); err = j.error; upgrade = !!j.upgrade; } catch { err = "صار خلل بالاتصال، جرّب مرة ثانية"; } }
     else reply = data.reply;
@@ -233,7 +247,7 @@ function autosize(){ const t=$("input"); t.style.height="auto"; t.style.height=M
 $("input").addEventListener("input", autosize);
 $("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && window.innerWidth > 760) { e.preventDefault(); send(); } });
 $("composer").onsubmit = e => { e.preventDefault(); send(); };
-$("newChat").onclick = () => { convId = null; welcome(); loadConvs(); $("side").classList.remove("open"); };
+$("newChat").onclick = () => { convId = null; setCatLabel(); welcome(); loadConvs(); $("side").classList.remove("open"); };
 $("menuBtn").onclick = () => $("side").classList.toggle("open");
 $("toggleAuth").onclick = () => {
   signup = !signup;
@@ -318,6 +332,18 @@ async function showPlans(selId){
 }
 $("planBtn").onclick = () => showPlans();
 
+/* ===== الذاكرة ===== */
+async function showMemory(){
+  const { data } = await sb.from("memories").select("id,fact,category,created_at").order("created_at",{ascending:false});
+  openModal(`<h3>🧠 ذاكرتي</h3><div class="sub">يار يتعلم عنك تلقائياً من محادثاتك (تخصصك، شغلك، مشاريعك) حتى ما تعيد نفسك. تگدر تضيف أو تمسح أي شي.</div>
+    <input class="field" id="newMem" placeholder="مثلاً: طالب مرحلة رابعة هندسة مدني بجامعة كركوك">
+    <button class="primary" id="addMem">أضف للذاكرة</button>
+    <div style="margin-top:12px">${(data||[]).map(m=>`<div class="row"><div class="t"><span>${esc(m.fact)}</span><span class="badge">${catOf(m.category).icon}</span></div><div class="acts"><button class="no" data-del="${m.id}">مسح</button></div></div>`).join("") || '<div class="sub">لهسه ماكو شي محفوظ.</div>'}</div>`);
+  $("addMem").onclick = async () => { const f = $("newMem").value.trim(); if (!f) return; await sb.from("memories").insert({ fact: f.slice(0,300), category: curCat }); showMemory(); };
+  $("modalBody").querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{ await sb.from("memories").delete().eq("id",b.dataset.del); showMemory(); });
+}
+$("memBtn").onclick = showMemory;
+
 /* ===== لوحة التحكم ===== */
 let adminTab = "requests";
 async function showAdmin(){
@@ -372,8 +398,13 @@ function render(session){
   $("app").style.display = inApp ? "flex" : "none";
   $("logoutBtn").style.display = inApp ? "inline-block" : "none";
   $("planBtn").style.display = inApp ? "inline-block" : "none";
+  $("memBtn").style.display = inApp ? "inline-block" : "none";
   if (!inApp) { $("adminBtn").style.display = "none"; $("expiryBar").style.display = "none"; }
-  if (inApp) { convId = null; welcome(); loadConvs(); loadAccount(); }
+  if (inApp) {
+    convId = null; curCat = "general";
+    sb.from("categories").select("*").order("sort").then(({data}) => { CATS = data || []; setCatLabel(); welcome(); loadConvs(); });
+    welcome(); loadAccount();
+  }
 }
 sb.auth.onAuthStateChange((_e, s) => render(s));
 const { data: { session } } = await sb.auth.getSession(); render(session);

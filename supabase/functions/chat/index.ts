@@ -7,22 +7,28 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const MODELS = (Deno.env.get("GEMINI_MODELS") ?? "gemini-2.5-flash,gemini-2.0-flash").split(",");
+const HISTORY = 24;        // آخر رسائل تنرسل كاملة
+const MAX_MEMORIES = 80;   // أقصى عدد معلومات محفوظة لكل مستخدم
 
 const PERSONA = `إنت "يار" (YAR AI)، مساعد ذكاء اصطناعي عراقي من صنع YAR Studio.
-- تحچي باللهجة العراقية البيضاء بشكل طبيعي ومحترم، وتفهم العربي الفصيح والكردي والتركماني والإنكليزي. إذا المستخدم كتب بالكردي جاوبه بالكردي.
-- تعرف العراق زين: المدن، العادات، المناسبات، الأكلات، والسوق المحلي.
-- تساعد بكل أنواع الشغل: كتابة منشورات وكابشنات وإعلانات، أفكار تصاميم، شرح، تخطيط مشاريع، رسائل، دراسة.
-- بالتصاميم: تقترح فكرة واضحة، نص الإعلان، الألوان، الترتيب، وبرومبت صورة مفصل بالإنكليزي إذا انطلب. الموديلات بالصور يكونون عراقيين أو كرد بلبس محلي.
+- تحچي باللهجة العراقية البيضاء بشكل طبيعي ومحترم، وتفهم العربي الفصيح والكردي والتركماني والإنكليزي. إذا المستخدم كتب بالكردي جاوبه بالكردي. الكتابة الأكاديمية أو الرسمية تكون بالفصيح.
+- تعرف العراق زين: المدن، العادات، المناسبات، الأكلات، الجامعات، والسوق المحلي.
 - الدقة أهم شي: إذا ما متأكد من معلومة گول بصراحة "مو متأكد"، ولا تخترع أرقام أو أسماء أو مصادر.
 - بالأمور الطبية والقانونية والمالية: تنطي معلومة عامة وتنصح بمراجعة مختص.
+- استخدم اللي تعرفه عن المستخدم (من الذاكرة) بشكل طبيعي بدون ما تگول "حسب ذاكرتي".
 - الأجوبة مرتبة وبدون حشو.`;
 
 const REVIEWER = `إنت مراجع جودة. راح توصلك رسالة المستخدم ومسودة الجواب.
-افحص: أخطاء المعلومات، الأخطاء الإملائية والنحوية، هل جاوب على السؤال كامل، هل اللغة مناسبة لسؤال المستخدم.
+افحص: أخطاء المعلومات، الحسابات، المصادر المخترعة، الأخطاء الإملائية والنحوية، هل جاوب على السؤال كامل، هل اللغة مناسبة.
 إذا المسودة صحيحة رجّعها مثل ما هي. إذا بيها غلط صحّحه.
 رجّع الجواب النهائي فقط، بدون أي تعليق منك.`;
 
-async function gemini(system: string, contents: unknown[]) {
+const EXTRACTOR = `استخرج من آخر رسالة للمستخدم معلومات ثابتة ومفيدة عنه للمستقبل: اسمه، دراسته أو تخصصه، جامعته، مرحلته، شغله، مدينته، مشاريعه وبحوثه الجارية، أدواته ولغاته البرمجية، تفضيلاته بطريقة الجواب.
+لا تحفظ: الأسئلة العابرة، المعلومات الصحية أو المالية الحساسة، كلمات السر، أرقام الهويات والحسابات.
+لا تكرر شي موجود بالقائمة الحالية. إذا معلومة جديدة تصحح قديمة، حط القديمة بـ remove.
+رجّع JSON فقط بهذا الشكل: {"add":["جملة قصيرة"],"remove":["نص المعلومة القديمة حرفياً"]}`;
+
+async function gemini(system: string, contents: unknown[], jsonOut = false) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("NO_KEY");
   let lastErr = "";
@@ -30,7 +36,10 @@ async function gemini(system: string, contents: unknown[]) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: 0.6 } }),
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] }, contents,
+        generationConfig: { temperature: jsonOut ? 0.1 : 0.6, ...(jsonOut ? { responseMimeType: "application/json" } : {}) },
+      }),
     });
     if (r.ok) {
       const j = await r.json();
@@ -46,6 +55,36 @@ function json(b: unknown, s = 200) {
   return new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+// deno-lint-ignore no-explicit-any
+async function afterReply(admin: any, userId: string, convId: string, category: string, text: string, mems: { id: string; fact: string }[]) {
+  // ١) ذاكرة طويلة: استخراج معلومات جديدة عن المستخدم
+  try {
+    const out = await gemini(EXTRACTOR, [{ role: "user", parts: [{ text: `القائمة الحالية:\n${mems.map((m) => "- " + m.fact).join("\n") || "(فارغة)"}\n\nرسالة المستخدم:\n${text}` }] }], true);
+    const { add = [], remove = [] } = JSON.parse(out);
+    const del = mems.filter((m) => (remove as string[]).includes(m.fact)).map((m) => m.id);
+    if (del.length) await admin.from("memories").delete().in("id", del);
+    const rows = (add as string[]).filter((f) => typeof f === "string" && f.trim().length > 3).slice(0, 5)
+      .map((f) => ({ user_id: userId, fact: f.trim().slice(0, 300), category }));
+    if (rows.length) await admin.from("memories").insert(rows);
+    const { data: all } = await admin.from("memories").select("id").eq("user_id", userId).order("created_at", { ascending: false });
+    if (all && all.length > MAX_MEMORIES) await admin.from("memories").delete().in("id", all.slice(MAX_MEMORIES).map((r: { id: string }) => r.id));
+  } catch (e) { console.error("memory", String(e)); }
+
+  // ٢) ملخص متجدد للمحادثات الطويلة حتى ما ينسى بدايتها
+  try {
+    const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
+    if ((count ?? 0) > HISTORY && (count ?? 0) % 8 === 0) {
+      const { data: conv } = await admin.from("conversations").select("summary").eq("id", convId).single();
+      const { data: old } = await admin.from("messages").select("role,content").eq("conversation_id", convId)
+        .order("created_at", { ascending: true }).limit((count ?? 0) - HISTORY);
+      const transcript = (old ?? []).map((m: { role: string; content: string }) => `${m.role === "user" ? "المستخدم" : "يار"}: ${m.content.slice(0, 1500)}`).join("\n");
+      const s = await gemini("لخّص المحادثة بنقاط مركزة تحفظ كل القرارات والمعلومات والأرقام المهمة وما تم الاتفاق عليه، بحدود ٢٥٠ كلمة.",
+        [{ role: "user", parts: [{ text: `الملخص السابق:\n${conv?.summary ?? "لا يوجد"}\n\nالرسائل:\n${transcript}` }] }]);
+      await admin.from("conversations").update({ summary: s }).eq("id", convId);
+    }
+  } catch (e) { console.error("summary", String(e)); }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
@@ -56,36 +95,49 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "سجّل دخول أول" }, 401);
 
-    const { conversation_id, message } = await req.json();
-    const text = String(message ?? "").trim().slice(0, 8000);
+    const { conversation_id, message, category } = await req.json();
+    const text = String(message ?? "").trim().slice(0, 12000);
     if (!text) return json({ error: "الرسالة فارغة" }, 400);
 
     const { data: planId } = await admin.rpc("effective_plan", { p_user: user.id });
     const { data: plan } = await admin.from("plans").select("*").eq("id", planId ?? "free").single();
     const limit = plan?.daily_limit ?? 15;
-
     const { data: used } = await admin.rpc("bump_usage", { p_user: user.id, p_limit: limit });
     if (used === -1) {
       return json({ error: `وصلت الحد اليومي لباقة ${plan?.name ?? "المجاني"} (${limit} رسالة). اشترك بباقة أعلى أو ارجع باچر.`, upgrade: true }, 429);
     }
 
-    let convId = conversation_id;
+    let convId = conversation_id, cat = "general", summary: string | null = null;
     if (!convId) {
-      const { data: c } = await admin.from("conversations").insert({ user_id: user.id, title: text.slice(0, 40) }).select("id").single();
+      const { data: okCat } = await admin.from("categories").select("id").eq("id", category ?? "general").maybeSingle();
+      cat = okCat?.id ?? "general";
+      const { data: c } = await admin.from("conversations").insert({ user_id: user.id, title: text.slice(0, 40), category: cat }).select("id").single();
       convId = c!.id;
     } else {
-      const { data: c } = await admin.from("conversations").select("id").eq("id", convId).eq("user_id", user.id).maybeSingle();
+      const { data: c } = await admin.from("conversations").select("id,category,summary").eq("id", convId).eq("user_id", user.id).maybeSingle();
       if (!c) return json({ error: "المحادثة مو موجودة" }, 404);
+      cat = c.category; summary = c.summary;
     }
-    const { data: hist } = await admin.from("messages").select("role,content").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(20);
+
+    const [{ data: catRow }, { data: mems }, { data: hist }] = await Promise.all([
+      admin.from("categories").select("name,prompt").eq("id", cat).single(),
+      admin.from("memories").select("id,fact").eq("user_id", user.id).order("created_at", { ascending: false }).limit(MAX_MEMORIES),
+      admin.from("messages").select("role,content").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(HISTORY),
+    ]);
+
+    let system = PERSONA;
+    if (catRow?.prompt) system += `\n\n${catRow.prompt}`;
+    if (mems?.length) system += `\n\nاللي تعرفه عن هذا المستخدم:\n${mems.map((m) => "- " + m.fact).join("\n")}`;
+    if (summary) system += `\n\nملخص بداية هذي المحادثة:\n${summary}`;
+
     const contents = (hist ?? []).reverse().map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
     contents.push({ role: "user", parts: [{ text }] });
 
-    const draft = await gemini(PERSONA, contents);
+    const draft = await gemini(system, contents);
     let final = draft;
     if (plan?.review) {
       try {
-        final = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `رسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]);
+        final = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `الفئة: ${catRow?.name}\nرسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]);
       } catch { final = draft; }
     }
 
@@ -94,7 +146,11 @@ Deno.serve(async (req) => {
       { conversation_id: convId, user_id: user.id, role: "assistant", content: final },
     ]);
     await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
-    return json({ conversation_id: convId, reply: final, remaining: limit - (used ?? 0), plan: plan?.id });
+
+    // الذاكرة والملخص يشتغلون بالخلفية حتى ما يتأخر الجواب
+    EdgeRuntime.waitUntil(afterReply(admin, user.id, convId, cat, text, mems ?? []));
+
+    return json({ conversation_id: convId, category: cat, reply: final, remaining: limit - (used ?? 0), plan: plan?.id });
   } catch (e) {
     const m = String((e as Error).message);
     if (m === "NO_KEY") return json({ error: "مفتاح الذكاء الاصطناعي بعده ما انضاف" }, 503);
