@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
-const TEXT_MODELS = (Deno.env.get("GEMINI_MODELS") ?? "gemini-3.5-flash,gemini-3.8-flash,gemini-flash-latest").split(",");
+const TEXT_MODELS = ["gemini-3.5-flash-lite", ...(Deno.env.get("GEMINI_MODELS") ?? "gemini-3.5-flash,gemini-flash-latest").split(",")];
 const IMG_MODELS = (Deno.env.get("GEMINI_IMAGE_MODELS") ?? "gemini-3.1-flash-image,gemini-2.5-flash-image").split(",");
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 const T = (ms: number) => AbortSignal.timeout(ms);
@@ -16,7 +16,7 @@ Return JSON only: {"prompt":"...","aspect":"1:1|4:5|9:16|16:9","caption":"one sh
 async function gemText(system: string, text: string) {
   const key = Deno.env.get("GEMINI_API_KEY")!;
   for (const m of TEXT_MODELS) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m.trim()}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, signal: T(25000),
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m.trim()}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, signal: T(12000),
       body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text }] }], generationConfig: { temperature: 0.7, responseMimeType: "application/json" } }) }).catch(() => null);
     if (r?.ok) { const j = await r.json(); const t = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join(""); if (t) return t; }
   }
@@ -104,12 +104,17 @@ Deno.serve(async (req) => {
     if (used === -1) return json({ error: `وصلت حد الصور اليومي لباقة ${plan?.name ?? "المجاني"} (${limit} صور). اشترك بباقة أعلى أو ارجع باچر.`, upgrade: true }, 429);
 
     let spec = { prompt: text, aspect: "1:1", caption: "هاي الصورة اللي طلبتها" };
+    const tp = Date.now();
     try { spec = { ...spec, ...JSON.parse(await gemText(PROMPTER, text)) }; } catch { /* raw text */ }
+    console.log("prompt-time", Date.now() - tp, "ms");
     if (!SIZES[spec.aspect]) spec.aspect = "1:1";
 
+    // صور Google المدفوعة بس إذا فعّلنا الدفع (GEMINI_IMAGES=1)، غير هيج نروح للمجاني مباشرة بدون انتظار
+    const t0 = Date.now();
     let bytes: Uint8Array | null = null;
-    if (plan?.id !== "free") bytes = await gemImage(spec.prompt, spec.aspect);
+    if (plan?.id !== "free" && Deno.env.get("GEMINI_IMAGES") === "1") bytes = await gemImage(spec.prompt, spec.aspect);
     if (!bytes) { const [w, h] = SIZES[spec.aspect]; bytes = await freeImage(spec.prompt, w, h); }
+    console.log("image-time", Date.now() - t0, "ms");
     if (!bytes) {
       await admin.rpc("bump_images", { p_user: user.id, p_limit: -999 }).then(() => {}, () => {}); // ما تنحسب محاولة فاشلة
       return json({ error: "خدمة الصور المجانية مزدحمة هسه. جرّب بعد شوية، وهاي المحاولة ما انحسبت من رصيدك." }, 503);
