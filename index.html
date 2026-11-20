@@ -608,11 +608,27 @@ async function toggleMic(){
   catch { return alertBox("اسمح ليار يستخدم المايك: من إعدادات المتصفح ← الأذونات ← المايكروفون"); }
   const mime = ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg"].find(t => MediaRecorder.isTypeSupported(t)) || "";
   const chunks = []; const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  REC = rec; btn.classList.add("rec"); $("remain").textContent = "🔴 يسجّل… احچي، وبعدها اضغط ✕ يم الزر الأحمر ·";
+  REC = rec; btn.classList.add("rec"); $("remain").textContent = "🔴 احچي… كلامك ينكتب، وبعدها اضغط ✕ يم الزر الأحمر ·";
   const stopTimer = setTimeout(() => rec.state === "recording" && rec.stop(), 120000); // أقصى شي دقيقتين
+  // كتابة مباشرة وإنت تحچي (إذا الموبايل يدعمها)
+  const inp = $("input"), base = inp.value ? inp.value + " " : "";
+  let live = "", done = "", liveOk = false, sr = null;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SR) {
+    try {
+      sr = new SR(); sr.continuous = true; sr.interimResults = true;
+      const last = [...document.querySelectorAll(".msgrow.user")].pop()?.textContent || "";
+      sr.lang = ({ ar:"ar-IQ", ckb:"ar-IQ", en:"en-US" })[textLang(inp.value || last)] || "ar-IQ";
+      sr.onresult = e => { live = [...e.results].map(r => r[0].transcript).join(""); if (live.trim()) { liveOk = true; inp.value = base + done + live; autosize(); } };
+      sr.onerror = () => {}; sr.onend = () => { done += live ? live + " " : ""; live = ""; if (REC === rec) try { sr.start(); } catch {} }; // يكمل إذا وكف وحده بدون ما يضيع الكلام
+      sr.start();
+    } catch { sr = null; }
+  }
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   rec.onstop = async () => {
     clearTimeout(stopTimer); stream.getTracks().forEach(t => t.stop()); REC = null; btn.classList.remove("rec"); setTimeout(refreshActive, 0);
+    if (sr) { sr.onend = null; try { sr.stop(); } catch {} }
+    if (liveOk) { $("remain").textContent = ""; try { localStorage.setItem("yar_draft", inp.value); } catch {} inp.focus(); return; } // انكتب مباشرة، ما نحتاج الخادم
     const blob = new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" });
     if (blob.size < 2000) { $("remain").textContent = ""; return alertBox("التسجيل قصير هواية، احچي شوية أكثر"); }
     $("remain").textContent = "✍️ يار يكتب كلامك… ·";
@@ -620,7 +636,7 @@ async function toggleMic(){
     const { data, error } = await sb.functions.invoke("stt", { body: { audio, mime: blob.type } });
     $("remain").textContent = "";
     if (error || !data?.text) { let m = "ما كدرت أسمع زين، جرّب مرة ثانية"; try { m = (await error.context.json()).error || m; } catch {} return alertBox(m); }
-    const inp = $("input"); inp.value = (inp.value ? inp.value + " " : "") + data.text; autosize(); inp.focus();
+    inp.value = base + data.text; autosize(); inp.focus();
     try { localStorage.setItem("yar_draft", inp.value); } catch {}
   };
   rec.start(); setTimeout(refreshActive, 50);
