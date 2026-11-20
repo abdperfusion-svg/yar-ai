@@ -123,6 +123,12 @@ textarea::placeholder{color:var(--dim)}
 .cursor::after{content:"▍";color:var(--a1);animation:pulse 1s infinite;margin-inline-start:2px}
 .xmenu{position:relative;display:inline-block}.xmenu .dd{display:none;position:absolute;bottom:110%;inset-inline-start:0;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:6px;z-index:30;min-width:170px;box-shadow:0 8px 30px rgba(0,0,0,.4)}.xmenu.open .dd{display:block}.xmenu .dd button{display:block;width:100%;text-align:start;padding:8px 10px;border-radius:8px}.xmenu .dd button:hover{background:var(--panel)}
 #micBtn.rec{background:rgba(239,68,68,.18);border-color:#ef4444;color:#fff}
+.skchip{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(120deg,rgba(94,234,212,.14),rgba(167,139,250,.18));border:1px solid rgba(167,139,250,.45);border-radius:20px;padding:4px 6px 4px 12px;font-size:13.5px;margin-bottom:6px}.skchip button{background:transparent;border:0;color:var(--muted);font-size:14px;padding:0 4px}
+.sklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin:10px 0}
+.skcard{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;cursor:pointer;text-align:start;transition:border-color .15s}
+.skcard:hover{border-color:var(--a1)}.skcard b{display:block;margin:4px 0 2px}.skcard small{color:var(--muted);display:block;line-height:1.5}
+.skcard .ic{font-size:22px}.skcard .mine{float:inline-end;display:flex;gap:4px}.skcard .mine button{font-size:12px;padding:2px 6px;border-radius:8px;background:var(--panel);border:1px solid var(--line)}
+.sktabs{display:flex;gap:6px;margin:8px 0}.sktabs button{padding:6px 12px;border-radius:20px;border:1px solid var(--line);background:transparent;color:var(--muted)}.sktabs button.on{background:var(--panel2);color:var(--text);border-color:var(--a1)}
 .catchip:hover{color:var(--text);background:var(--panel2)}
 .send{border:0;border-radius:50%;width:40px;height:40px;background:var(--text);color:#111;font-size:18px;display:grid;place-items:center;flex:none}
 .send:disabled{background:var(--panel2);color:var(--dim)}
@@ -253,12 +259,14 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
     <div id="chat"></div>
     <form id="composer">
       <div class="box">
+        <div id="skillChip" style="display:none"></div>
         <div id="attList" style="display:flex;gap:6px;flex-wrap:wrap"></div>
         <input type="file" id="fileIn" accept="image/*,application/pdf,text/plain" multiple hidden>
         <textarea id="input" rows="1" placeholder="اسأل يار أي شي…"></textarea>
         <div class="box-row">
           <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span style="font-size:10px">▾</span>
             <div class="catmenu" id="catMenu"></div></button>
+          <button type="button" class="catchip" id="skillBtn" title="سكلات جاهزة" style="margin-inline-start:6px">✨<span class="hide-sm"> سكلات</span></button>
           <button type="button" class="catchip" id="modeBtn" style="margin-inline-start:6px"><span id="modeLabel">✦ برو</span> <span style="font-size:10px">▾</span>
             <div class="catmenu" id="modeMenu"></div></button>
           <button type="button" class="catchip" id="thinkBtn" title="فكّر بعمق" style="margin-inline-start:6px">🧠<span class="hide-sm"> فكّر بعمق</span></button>
@@ -366,6 +374,70 @@ function makePdf(text){
   const oldTitle = document.title; document.title = t;
   document.body.classList.add("printing");
   setTimeout(() => { window.print(); setTimeout(() => { document.body.classList.remove("printing"); document.title = oldTitle; }, 500); }, 100);
+}
+
+/* ===== السكلات: وصفات جاهزة من YAR + سكلات المستخدم الخاصة ===== */
+let SKILL = null, SKILLS = [], skTab = "all";
+function renderSkillChip(){
+  const c = $("skillChip");
+  if (!SKILL) { c.style.display = "none"; c.innerHTML = ""; $("skillBtn").classList.remove("on"); return; }
+  c.style.display = "block"; $("skillBtn").classList.add("on");
+  c.innerHTML = `<span class="skchip">${esc(SKILL.icon||"✨")} ${esc(SKILL.name)} <button type="button" title="إلغاء السكل">✕</button></span>`;
+  c.querySelector("button").onclick = () => { SKILL = null; renderSkillChip(); };
+}
+async function loadSkills(){ const { data } = await sb.from("skills").select("*").order("sort").order("created_at"); SKILLS = data || []; return SKILLS; }
+async function showSkills(){
+  await loadSkills();
+  const uid = (await sb.auth.getUser()).data.user?.id;
+  const list = SKILLS.filter(k => skTab === "mine" ? k.owner === uid : skTab === "yar" ? !k.owner : true);
+  openModal(`<h3>✨ السكلات</h3><div class="sub">اختار سكل، جاوب على أسئلة قليلة، ويار يسوي الشغلة كاملة بنفس الجودة كل مرة. وتگدر تسوي سكلاتك الخاصة.</div>
+    <div class="sktabs"><button data-t="all" class="${skTab==='all'?'on':''}">الكل</button><button data-t="yar" class="${skTab==='yar'?'on':''}">من YAR</button><button data-t="mine" class="${skTab==='mine'?'on':''}">سكلاتي</button></div>
+    <button class="primary" id="newSkill" style="width:auto;padding:8px 16px">+ سكل جديد</button>
+    <div class="sklist">${list.map(k=>`<div class="skcard" data-id="${k.id}">${k.owner===uid?`<span class="mine"><button data-ed="${k.id}">تعديل</button><button data-del="${k.id}">مسح</button></span>`:''}<span class="ic">${esc(k.icon||'✨')}</span><b>${esc(k.name)}</b><small>${esc(k.description||'')}</small></div>`).join("") || '<div class="sub">لهسه ما سويت سكلات. اضغط «+ سكل جديد».</div>'}</div>`);
+  const m = $("modalBody");
+  m.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { skTab = b.dataset.t; showSkills(); });
+  $("newSkill").onclick = () => editSkill(null);
+  m.querySelectorAll("[data-ed]").forEach(b => b.onclick = e => { e.stopPropagation(); editSkill(SKILLS.find(k=>k.id===b.dataset.ed)); });
+  m.querySelectorAll("[data-del]").forEach(b => b.onclick = async e => { e.stopPropagation(); if (!confirm("تمسح هذا السكل؟")) return; await sb.from("skills").delete().eq("id", b.dataset.del); if (SKILL?.id === b.dataset.del) { SKILL = null; renderSkillChip(); } showSkills(); });
+  m.querySelectorAll(".skcard").forEach(c => c.onclick = () => useSkill(SKILLS.find(k=>k.id===c.dataset.id)));
+}
+function useSkill(k){
+  const fields = Array.isArray(k.fields) ? k.fields : [];
+  if (!fields.length) { SKILL = k; renderSkillChip(); closeModal(); $("input").focus(); return; }
+  openModal(`<h3>${esc(k.icon||'✨')} ${esc(k.name)}</h3><div class="sub">${esc(k.description||'')}</div>
+    ${fields.map((f,i)=>`<label class="sub">${esc(f.label||f.key)}</label>${f.long?`<textarea class="field" id="skf${i}" rows="4" placeholder="${esc(f.placeholder||'')}"></textarea>`:`<input class="field" id="skf${i}" placeholder="${esc(f.placeholder||'')}">`}`).join("")}
+    <button class="primary" id="skGo">✨ ابدأ</button><button class="link" id="skBack">رجوع للسكلات</button><div class="msg" id="skMsg"></div>`);
+  $("skBack").onclick = showSkills;
+  $("skGo").onclick = () => {
+    const vals = fields.map((f,i)=>[f.label||f.key, ($("skf"+i).value||"").trim()]);
+    if (!vals.some(([,v])=>v)) { $("skMsg").textContent = "عبّي حقل واحد على الأقل"; return; }
+    SKILL = k; renderSkillChip(); closeModal();
+    $("input").value = `${k.name}:\n` + vals.filter(([,v])=>v).map(([l,v])=>`- ${l}: ${v}`).join("\n"); autosize();
+    send();
+  };
+}
+function editSkill(k){
+  const isNew = !k; k = k || { name:"", icon:"✨", description:"", prompt:"", fields:[], category: curCat };
+  const qs = (k.fields||[]).map(f=>f.label + (f.long ? " *" : "")).join("\n");
+  openModal(`<h3>${isNew?'+ سكل جديد':'تعديل السكل'}</h3><div class="sub">اكتب ليار شلون يسوي هذي الشغلة، والأسئلة اللي يسألها كل مرة. السكل يكون إلك بس.</div>
+    <label class="sub">اسم السكل</label><input class="field" id="sk_name" maxlength="60" placeholder="مثلاً: تقرير يومي للصيدلية" value="${esc(k.name)}">
+    <label class="sub">أيقونة (إيموجي)</label><input class="field" id="sk_icon" maxlength="4" value="${esc(k.icon||'✨')}" style="width:80px">
+    <label class="sub">وصف قصير</label><input class="field" id="sk_desc" maxlength="200" placeholder="شنو يسوي بسطر واحد" value="${esc(k.description||'')}">
+    <label class="sub">الفئة</label><select class="field" id="sk_cat">${CATS.map(c=>`<option value="${c.id}" ${c.id===(k.category||curCat)?'selected':''}>${c.icon} ${c.name}</option>`).join("")}</select>
+    <label class="sub">التعليمات (شلون يار يشتغل)</label><textarea class="field" id="sk_prompt" rows="6" maxlength="6000" placeholder="مثلاً: اكتب تقرير مبيعات يومي بجدول: المبيعات، المصاريف، الصافي، وأهم ٣ ملاحظات. استخدم الدينار. خلي اللغة رسمية مختصرة.">${esc(k.prompt||'')}</textarea>
+    <label class="sub">الأسئلة اللي يسألها (كل سؤال بسطر، وحط * بآخره إذا جوابه طويل)</label><textarea class="field" id="sk_fields" rows="4" placeholder="المبيعات اليوم&#10;المصاريف&#10;ملاحظات *">${esc(qs)}</textarea>
+    <button class="primary" id="sk_save">حفظ السكل</button><button class="link" id="sk_back">رجوع</button><div class="msg" id="sk_msg"></div>`);
+  $("sk_back").onclick = showSkills;
+  $("sk_save").onclick = async () => {
+    const name = $("sk_name").value.trim(), prompt = $("sk_prompt").value.trim();
+    if (name.length < 2 || prompt.length < 10) { $("sk_msg").textContent = "اكتب اسم السكل والتعليمات (١٠ أحرف على الأقل)"; return; }
+    const fields = $("sk_fields").value.split("\n").map(l=>l.trim()).filter(Boolean).slice(0,8).map((l,i)=>({ key:"f"+i, label:l.replace(/\s*\*$/,"").slice(0,80), long:/\*$/.test(l) }));
+    const row = { name, icon: $("sk_icon").value.trim() || "✨", description: $("sk_desc").value.trim() || null, category: $("sk_cat").value, prompt, fields };
+    const uid = (await sb.auth.getUser()).data.user.id;
+    const { error } = isNew ? await sb.from("skills").insert({ ...row, owner: uid }) : await sb.from("skills").update(row).eq("id", k.id);
+    if (error) { $("sk_msg").textContent = /الحد الأقصى/.test(error.message) ? "وصلت الحد الأقصى (٣٠ سكل)" : "ما انحفظ، جرّب مرة ثانية"; return; }
+    skTab = "mine"; showSkills();
+  };
 }
 
 /* ===== تصدير الجواب لكل أنواع الملفات ===== */
@@ -477,6 +549,7 @@ function renderAtt(){
 }
 $("attBtn").onclick = () => $("fileIn").click();
 $("micBtn").onclick = () => toggleMic();
+$("skillBtn").onclick = () => showSkills();
 $("fileIn").onchange = async () => {
   for (const f of [...$("fileIn").files].slice(0, 4 - ATT.length)) {
     if (f.size > 4 * 1024 * 1024) { alertBox(`الملف «${f.name}» أكبر من ٤ ميگا`); continue; }
@@ -585,7 +658,7 @@ async function send(){
     const { data: { session } } = await sb.auth.getSession();
     const res = await fetch(`${SUPABASE_URL}/functions/v1/${RESEARCH ? "research" : "chat"}`, { method: "POST",
       headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ conversation_id: convId, message: text, category: curCat, files, mode: MODE, think: THINK, stream: true }) });
+      body: JSON.stringify({ conversation_id: convId, message: text, category: curCat, files, mode: MODE, think: THINK, stream: true, skill_id: SKILL?.id || null }) });
     if (!res.ok || !(res.headers.get("content-type") || "").includes("event-stream")) {
       let j = {}; try { j = await res.json(); } catch {}
       showErr(j.error || "صار خلل بالاتصال، جرّب مرة ثانية", !!j.upgrade); return;
@@ -616,7 +689,7 @@ function autosize(){ const t=$("input"); t.style.height="auto"; t.style.height=M
 $("input").addEventListener("input", autosize);
 $("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && window.innerWidth > 760) { e.preventDefault(); send(); } });
 $("composer").onsubmit = e => { e.preventDefault(); send(); };
-const newChat = () => { convId = null; saveConv(); setCatLabel(); welcome(); loadConvs(); closeSide(); $("input").focus(); };
+const newChat = () => { convId = null; SKILL = null; renderSkillChip(); saveConv(); setCatLabel(); welcome(); loadConvs(); closeSide(); $("input").focus(); };
 $("newChat").onclick = newChat; $("newChat2").onclick = newChat;
 $("toggleAuth").onclick = () => {
   signup = !signup;

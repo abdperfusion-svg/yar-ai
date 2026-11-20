@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "سجّل دخول أول" }, 401);
 
-    const { conversation_id, message, category, files, mode, think, stream } = await req.json();
+    const { conversation_id, message, category, files, mode, think, stream, skill_id } = await req.json();
     const text = String(message ?? "").trim().slice(0, 12000);
     if (!text && !(Array.isArray(files) && files.length)) return json({ error: "الرسالة فارغة" }, 400);
 
@@ -227,6 +227,11 @@ Deno.serve(async (req) => {
     }
     if (mems?.length) system += `\n\nاللي تعرفه عن هذا المستخدم:\n${mems.map((m) => "- " + m.fact).join("\n")}`;
     if (summary) system += `\n\nملخص بداية هذي المحادثة:\n${summary}`;
+    // سكل مختار: تعليمات جاهزة (من YAR أو من المستخدم نفسه)
+    if (skill_id) {
+      const { data: sk } = await admin.from("skills").select("name,prompt,owner").eq("id", skill_id).maybeSingle();
+      if (sk && (!sk.owner || sk.owner === user.id)) system += `\n\n### سكل مفعّل: «${sk.name}»\nاتبع هذي التعليمات بدقة لهذا الطلب:\n${sk.prompt}`;
+    }
 
     const contents = (hist ?? []).reverse().map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
     const att = (Array.isArray(files) ? files : []).slice(0, 4).filter((f: { mime?: string; data?: string }) => f?.mime && f?.data && f.data.length < 11_000_000);
