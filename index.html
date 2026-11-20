@@ -168,12 +168,12 @@ const STARTERS = [
 function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
 function fmt(s){return esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}
 
-let CATS = [], curCat = "general";
+let CATS = [], curCat = "general", PROF = {};
 const catOf = id => CATS.find(c=>c.id===id) || { id:"general", name:"عام", icon:"💬", starters:[] };
 function welcome(){
   if (!CATS.length) { $("chat").innerHTML = `<div class="welcome"><h2 class="grad">شلونك؟ 👋</h2></div>`; return; }
   const c = catOf(curCat);
-  $("chat").innerHTML = `<div class="welcome"><h2 class="grad">شلونك؟ 👋</h2><p>آني يار. اختار مجالك حتى أشتغل وياك بطريقته:</p>
+  $("chat").innerHTML = `<div class="welcome"><h2 class="grad">شلونك${PROF.full_name ? " "+esc(PROF.full_name.split(" ")[0]) : ""}؟ 👋</h2><p>آني يار. اختار مجالك حتى أشتغل وياك بطريقته:</p>
     <div class="cats">${CATS.map(x=>`<button class="cat ${x.id===curCat?'on':''}" data-c="${x.id}"><span>${x.icon}</span><b>${x.name}</b><small>${esc(x.blurb)}</small></button>`).join("")}</div>
     <p style="margin:18px 0 10px">أمثلة من <b>${c.icon} ${c.name}</b>:</p>
     <div class="chips">${(c.starters||[]).map((s,i)=>`<button class="chip" data-i="${i}"><span>${esc(s)}</span></button>`).join("")}</div></div>`;
@@ -280,11 +280,13 @@ async function loadAccount(){
   const [p, s, me, adm] = await Promise.all([
     sb.from("plans").select("*").order("sort"),
     sb.from("settings").select("key,value"),
-    sb.from("profiles").select("plan,plan_until").eq("user_id", uid).maybeSingle(),
+    sb.from("profiles").select("plan,plan_until,full_name,category,specialty,institution,stage,city,about,onboarded").eq("user_id", uid).maybeSingle(),
     sb.rpc("is_admin"),
   ]);
   PLANS = p.data || []; SETTINGS = Object.fromEntries((s.data||[]).map(r=>[r.key,r.value]));
-  ME = me.data || { plan:"free" }; IS_ADMIN = !!adm.data;
+  ME = me.data || { plan:"free" }; IS_ADMIN = !!adm.data; PROF = me.data || {};
+  if (PROF.category && !convId) { curCat = PROF.category; setCatLabel(); welcome(); }
+  if (me.data && !PROF.onboarded) { const go = () => CATS.length ? showProfile(true) : setTimeout(go, 200); go(); }
   const active = ME.plan !== "free" && ME.plan_until && new Date(ME.plan_until) > new Date();
   if (!active) ME.plan = "free";
   const cur = PLANS.find(x=>x.id===ME.plan);
@@ -336,13 +338,43 @@ $("planBtn").onclick = () => showPlans();
 async function showMemory(){
   const { data } = await sb.from("memories").select("id,fact,category,created_at").order("created_at",{ascending:false});
   openModal(`<h3>🧠 ذاكرتي</h3><div class="sub">يار يتعلم عنك تلقائياً من محادثاتك (تخصصك، شغلك، مشاريعك) حتى ما تعيد نفسك. تگدر تضيف أو تمسح أي شي.</div>
+    <button class="icon-btn" id="editProf" style="margin-bottom:10px">👤 تعديل ملفي الشخصي${PROF.full_name ? ` (${esc(PROF.full_name)})` : ''}</button>
     <input class="field" id="newMem" placeholder="مثلاً: طالب مرحلة رابعة هندسة مدني بجامعة كركوك">
     <button class="primary" id="addMem">أضف للذاكرة</button>
     <div style="margin-top:12px">${(data||[]).map(m=>`<div class="row"><div class="t"><span>${esc(m.fact)}</span><span class="badge">${catOf(m.category).icon}</span></div><div class="acts"><button class="no" data-del="${m.id}">مسح</button></div></div>`).join("") || '<div class="sub">لهسه ماكو شي محفوظ.</div>'}</div>`);
+  $("editProf").onclick = () => showProfile(false);
   $("addMem").onclick = async () => { const f = $("newMem").value.trim(); if (!f) return; await sb.from("memories").insert({ fact: f.slice(0,300), category: curCat }); showMemory(); };
   $("modalBody").querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{ await sb.from("memories").delete().eq("id",b.dataset.del); showMemory(); });
 }
 $("memBtn").onclick = showMemory;
+
+/* ===== الملف الشخصي (يطلع أول مرة يسجّل) ===== */
+const PF = [
+  ["full_name","اسمك","مثلاً: عبدالرحمن طاهر"],
+  ["specialty","تخصصك أو شغلك","مثلاً: هندسة مدني / تمريض / مبرمج ويب"],
+  ["institution","جامعتك أو مكان شغلك","مثلاً: جامعة كركوك"],
+  ["stage","المرحلة أو سنين الخبرة","مثلاً: مرحلة رابعة / ماجستير / ٥ سنين خبرة"],
+  ["city","مدينتك","مثلاً: كركوك"],
+  ["about","شي تحب يار يعرفه عنك (اختياري)","مثلاً: أشتغل على بحث تخرج عن الطاقة الشمسية، وأحب الأجوبة مختصرة"],
+];
+function showProfile(first){
+  openModal(`<h3>${first ? "أهلاً بيك بـ YAR AI 👋" : "👤 ملفي"}</h3>
+    <div class="sub">${first ? "عرّفنا بنفسك حتى يار يشتغل وياك على مستواك ويتذكرك بكل محادثة." : "يار يستخدم هذي المعلومات بكل محادثاتك."}</div>
+    <label class="sub">مجالك الأساسي</label>
+    <select class="field" id="pf_category">${CATS.map(c=>`<option value="${c.id}" ${c.id===(PROF.category||curCat)?'selected':''}>${c.icon} ${c.name}</option>`).join("")}</select>
+    ${PF.map(([k,l,ph])=>`<label class="sub">${l}</label>${k==='about'?`<textarea class="field" id="pf_${k}" rows="3" placeholder="${ph}">${esc(PROF[k]||'')}</textarea>`:`<input class="field" id="pf_${k}" placeholder="${ph}" value="${esc(PROF[k]||'')}">`}`).join("")}
+    <button class="primary" id="saveProf">حفظ</button>${first?'<button class="link" id="skipProf">بعدين</button>':''}<div class="msg" id="profMsg"></div>`);
+  $("saveProf").onclick = async () => {
+    const row = { onboarded: true, category: $("pf_category").value };
+    PF.forEach(([k]) => row[k] = ($("pf_"+k).value || "").trim().slice(0, 400) || null);
+    if (!row.full_name || !row.specialty) { $("profMsg").textContent = "اكتب اسمك وتخصصك على الأقل"; return; }
+    const uid = (await sb.auth.getUser()).data.user.id;
+    const { error } = await sb.from("profiles").update(row).eq("user_id", uid);
+    if (error) { $("profMsg").textContent = "ما انحفظ، جرّب مرة ثانية"; return; }
+    PROF = { ...PROF, ...row }; curCat = row.category; setCatLabel(); closeModal(); if (!convId) welcome();
+  };
+  const sk = $("skipProf"); if (sk) sk.onclick = closeModal;
+}
 
 /* ===== لوحة التحكم ===== */
 let adminTab = "requests";

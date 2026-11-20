@@ -119,14 +119,20 @@ Deno.serve(async (req) => {
       cat = c.category; summary = c.summary;
     }
 
-    const [{ data: catRow }, { data: mems }, { data: hist }] = await Promise.all([
+    const [{ data: catRow }, { data: mems }, { data: hist }, { data: prof }] = await Promise.all([
       admin.from("categories").select("name,prompt").eq("id", cat).single(),
       admin.from("memories").select("id,fact").eq("user_id", user.id).order("created_at", { ascending: false }).limit(MAX_MEMORIES),
       admin.from("messages").select("role,content").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(HISTORY),
+      admin.from("profiles").select("full_name,specialty,institution,stage,city,about").eq("user_id", user.id).maybeSingle(),
     ]);
 
     let system = PERSONA;
     if (catRow?.prompt) system += `\n\n${catRow.prompt}`;
+    if (prof) {
+      const lines = [["الاسم", prof.full_name], ["التخصص أو الشغل", prof.specialty], ["الجامعة أو مكان العمل", prof.institution], ["المرحلة أو الخبرة", prof.stage], ["المدينة", prof.city], ["عن نفسه", prof.about]]
+        .filter(([, v]) => v).map(([k, v]) => `- ${k}: ${v}`);
+      if (lines.length) system += `\n\nملف المستخدم الشخصي (هو كتبه بنفسه، ناديه باسمه):\n${lines.join("\n")}`;
+    }
     if (mems?.length) system += `\n\nاللي تعرفه عن هذا المستخدم:\n${mems.map((m) => "- " + m.fact).join("\n")}`;
     if (summary) system += `\n\nملخص بداية هذي المحادثة:\n${summary}`;
 
