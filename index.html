@@ -332,9 +332,9 @@ const MODES = [
 ];
 
 const STARTERS = [
-  ["✍️ كابشن إعلان", "اكتبلي كابشن انستغرام لعرض الجمعة السوداء لصيدلية، باللهجة العراقية وقصير وجذاب"],
+  ["✍️ كابشن إعلان", "اكتبلي كابشن انستغرام لعرض الجمعة السوداء لمحلي، باللهجة العراقية وقصير وجذاب"],
   ["🎨 فكرة تصميم", "أريد فكرة تصميم بوستر لمطعم مشويات عراقي: النص، الألوان، الترتيب، وبرومبت صورة بالإنكليزي"],
-  ["📋 خطة مشروع", "سويلي خطة مختصرة لفتح محل اكسسوارات موبايل بكركوك"],
+  ["📋 خطة مشروع", "سويلي خطة مختصرة لفتح محل اكسسوارات موبايل بمدينتي"],
   ["📩 رسالة رسمية", "اكتبلي رسالة رسمية لمدير الدائرة أطلب بيها إجازة ثلاث أيام"],
 ];
 
@@ -447,7 +447,7 @@ function editSkill(k){
   const isNew = !k; k = k || { name:"", icon:"✨", description:"", prompt:"", fields:[], category: curCat };
   const qs = (k.fields||[]).map(f=>f.label + (f.long ? " *" : "")).join("\n");
   openModal(`<h3>${isNew?'+ سكل جديد':'تعديل السكل'}</h3><div class="sub">اكتب ليار شلون يسوي هذي الشغلة، والأسئلة اللي يسألها كل مرة. السكل يكون إلك بس.</div>
-    <label class="sub">اسم السكل</label><input class="field" id="sk_name" maxlength="60" placeholder="مثلاً: تقرير يومي للصيدلية" value="${esc(k.name)}">
+    <label class="sub">اسم السكل</label><input class="field" id="sk_name" maxlength="60" placeholder="مثلاً: تقرير يومي لشغلي" value="${esc(k.name)}">
     <label class="sub">أيقونة (إيموجي)</label><input class="field" id="sk_icon" maxlength="4" value="${esc(k.icon||'✨')}" style="width:80px">
     <label class="sub">وصف قصير</label><input class="field" id="sk_desc" maxlength="200" placeholder="شنو يسوي بسطر واحد" value="${esc(k.description||'')}">
     <label class="sub">الفئة</label><select class="field" id="sk_cat">${CATS.map(c=>`<option value="${c.id}" ${c.id===(k.category||curCat)?'selected':''}>${c.icon} ${c.name}</option>`).join("")}</select>
@@ -605,7 +605,7 @@ $("scrim").onclick = closeSide;
 $("imgBtn").onclick = () => {
   imgMode = !imgMode; $("imgBtn").classList.toggle("on", imgMode);
   if (imgMode && RESEARCH) { RESEARCH = false; $("resBtn").classList.remove("on"); }
-  $("input").placeholder = imgMode ? "اوصف الصورة اللي تريدها… مثلاً: بوستر لصيدلية بألوان خضراء ويا بنت كردية" : "اسأل يار أي شي…";
+  $("input").placeholder = imgMode ? "اوصف الصورة اللي تريدها… مثلاً: غروب الشمس على نهر دجلة بأسلوب سينمائي" : "اسأل يار أي شي…";
   $("input").focus();
 };
 function setMode(){
@@ -623,7 +623,7 @@ let RESEARCH = false;
 $("resBtn").onclick = () => {
   RESEARCH = !RESEARCH; $("resBtn").classList.toggle("on", RESEARCH);
   if (RESEARCH && imgMode) $("imgBtn").click();
-  $("input").placeholder = RESEARCH ? "اكتب موضوع البحث أو السمينار… مثلاً: دور التمريض في الوقاية من التهابات القسطرة" : "اسأل يار أي شي…";
+  $("input").placeholder = RESEARCH ? "اكتب موضوع البحث أو السمينار… مثلاً: تأثير الذكاء الاصطناعي على التعليم بالعراق" : "اسأل يار أي شي…";
   $("input").focus();
 };
 document.addEventListener("click", () => $("modeMenu").classList.remove("open"));
@@ -842,7 +842,7 @@ async function showMemory(){
   const { data } = await sb.from("memories").select("id,fact,category,created_at").order("created_at",{ascending:false});
   openModal(`<h3>🧠 ذاكرتي</h3><div class="sub">يار يتعلم عنك تلقائياً من محادثاتك (تخصصك، شغلك، مشاريعك) حتى ما تعيد نفسك. تگدر تضيف أو تمسح أي شي.</div>
     <button class="icon-btn" id="editProf" style="margin-bottom:10px">👤 تعديل ملفي الشخصي${PROF.full_name ? ` (${esc(PROF.full_name)})` : ''}</button>
-    <input class="field" id="newMem" placeholder="مثلاً: طالب مرحلة رابعة هندسة مدني بجامعة كركوك">
+    <input class="field" id="newMem" placeholder="مثلاً: طالب مرحلة رابعة هندسة مدني">
     <button class="primary" id="addMem">أضف للذاكرة</button>
     <div style="margin-top:12px">${(data||[]).map(m=>`<div class="row"><div class="t"><span>${esc(m.fact)}</span><span class="badge">${catOf(m.category).icon}</span></div><div class="acts"><button class="no" data-del="${m.id}">مسح</button></div></div>`).join("") || '<div class="sub">لهسه ماكو شي محفوظ.</div>'}</div>`);
   $("editProf").onclick = () => showProfile(false);
@@ -855,9 +855,9 @@ $("memBtn").onclick = showMemory;
 const PF = [
   ["full_name","اسمك","مثلاً: عبدالرحمن طاهر"],
   ["specialty","تخصصك أو شغلك","مثلاً: هندسة مدني / تمريض / مبرمج ويب"],
-  ["institution","جامعتك أو مكان شغلك","مثلاً: جامعة كركوك"],
+  ["institution","جامعتك أو مكان شغلك","مثلاً: جامعة بغداد / شركة…"],
   ["stage","المرحلة أو سنين الخبرة","مثلاً: مرحلة رابعة / ماجستير / ٥ سنين خبرة"],
-  ["city","مدينتك","مثلاً: كركوك"],
+  ["city","مدينتك","مثلاً: بغداد"],
   ["about","شي تحب يار يعرفه عنك (اختياري)","مثلاً: أشتغل على بحث تخرج عن الطاقة الشمسية، وأحب الأجوبة مختصرة"],
 ];
 function showProfile(first){
