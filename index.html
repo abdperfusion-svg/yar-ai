@@ -118,6 +118,9 @@ textarea{width:100%;background:transparent;border:0;color:var(--text);font-famil
 textarea::placeholder{color:var(--dim)}
 .box-row{display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:8px}
 .catchip{display:flex;align-items:center;gap:6px;white-space:nowrap;flex:none;background:transparent;border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:13.5px;color:var(--muted);position:relative}
+.box-row{overflow-x:auto;scrollbar-width:none}.box-row::-webkit-scrollbar{display:none}
+@media(max-width:560px){.hide-sm{display:none}}
+.cursor::after{content:"▍";color:var(--a1);animation:pulse 1s infinite;margin-inline-start:2px}
 .catchip:hover{color:var(--text);background:var(--panel2)}
 .send{border:0;border-radius:50%;width:40px;height:40px;background:var(--text);color:#111;font-size:18px;display:grid;place-items:center;flex:none}
 .send:disabled{background:var(--panel2);color:var(--dim)}
@@ -254,6 +257,9 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
         <div class="box-row">
           <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span style="font-size:10px">▾</span>
             <div class="catmenu" id="catMenu"></div></button>
+          <button type="button" class="catchip" id="modeBtn" style="margin-inline-start:6px"><span id="modeLabel">✦ برو</span> <span style="font-size:10px">▾</span>
+            <div class="catmenu" id="modeMenu"></div></button>
+          <button type="button" class="catchip" id="thinkBtn" title="فكّر بعمق" style="margin-inline-start:6px">🧠<span class="hide-sm"> فكّر بعمق</span></button>
           <button type="button" class="catchip" id="attBtn" title="أرفق ملف أو صورة" style="margin-inline-start:6px">📎</button>
           <button type="button" class="catchip" id="imgBtn" style="margin-inline-end:auto;margin-inline-start:6px">🎨 صورة</button>
           <button class="send" id="sendBtn" type="submit" aria-label="إرسال">↑</button>
@@ -279,6 +285,12 @@ const SUPABASE_KEY = "sb_publishable_qKc7vKrYAyUe0trChcVZuA_p-bBSubV";
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
 let signup = false, convId = null, busy = false, imgMode = false;
+let MODE = (()=>{ try { return localStorage.getItem("yar_mode") || "pro"; } catch { return "pro"; } })(), THINK = false;
+const MODES = [
+  { id:"fast", icon:"⚡", name:"يار سريع", blurb:"جواب فوري للأسئلة البسيطة" },
+  { id:"pro", icon:"✦", name:"يار برو", blurb:"متوازن وذكي، الأنسب لأغلب الشغل" },
+  { id:"expert", icon:"💎", name:"يار خبير", blurb:"أقوى نماذج العالم (Claude / Grok) — للمشتركين" },
+];
 
 const STARTERS = [
   ["✍️ كابشن إعلان", "اكتبلي كابشن انستغرام لعرض الجمعة السوداء لصيدلية، باللهجة العراقية وقصير وجذاب"],
@@ -384,6 +396,18 @@ $("imgBtn").onclick = () => {
   $("input").placeholder = imgMode ? "اوصف الصورة اللي تريدها… مثلاً: بوستر لصيدلية بألوان خضراء ويا بنت كردية" : "اسأل يار أي شي…";
   $("input").focus();
 };
+function setMode(){
+  const m = MODES.find(x=>x.id===MODE) || MODES[1];
+  $("modeLabel").textContent = `${m.icon} ${m.name.replace("يار ","")}`;
+  $("modeMenu").innerHTML = MODES.map(x=>`<button type="button" data-m="${x.id}" class="${x.id===MODE?'on':''}"><span class="ic">${x.icon}</span><span><b>${x.name}</b><small>${x.blurb}</small></span></button>`).join("");
+  $("modeMenu").querySelectorAll("[data-m]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); $("modeMenu").classList.remove("open");
+    if (b.dataset.m === "expert" && (typeof ME === "undefined" || !ME?.plan || ME.plan === "free")) { showPlans(); return; }
+    MODE = b.dataset.m; try { localStorage.setItem("yar_mode", MODE); } catch {} setMode(); });
+}
+setMode();
+$("modeBtn").onclick = e => { e.stopPropagation(); $("modeMenu").classList.toggle("open"); $("catMenu").classList.remove("open"); };
+$("thinkBtn").onclick = () => { THINK = !THINK; $("thinkBtn").classList.toggle("on", THINK); };
+document.addEventListener("click", () => $("modeMenu").classList.remove("open"));
 $("catBtn").onclick = e => { e.stopPropagation(); $("catMenu").classList.toggle("open"); };
 $("meBtn").onclick = e => { e.stopPropagation(); $("meMenu").classList.toggle("open"); };
 document.addEventListener("click", () => { $("catMenu").classList.remove("open"); $("meMenu").classList.remove("open"); });
@@ -417,23 +441,53 @@ async function send(){
   busy = true; $("sendBtn").disabled = true; $("input").value = ""; autosize();
   bubble("user", files.length ? `📎 ${files.map(f=>f.name).join("، ")}\n${text}` : text);
   const pending = bubble("ai", null); if (imgMode) pending.querySelector(".shimmer").textContent = "يار يرسم الصورة… (تاخذ ثواني)";
+  const body = pending.querySelector(".body");
+  const showErr = (err, upgrade) => {
+    body.innerHTML = `<span class="err">⚠️ ${esc(err)}</span>` + (upgrade ? `<br><button class="primary" style="margin-top:10px;width:auto;padding:8px 18px">⭐ شوف الباقات</button>` : "");
+    const ub = body.querySelector("button"); if (ub) ub.onclick = () => showPlans();
+  };
+  const done = (data) => {
+    body.classList.remove("cursor");
+    body.innerHTML = fmt(data.reply); addCopy(pending, data.reply);
+    const isNew = !convId; convId = data.conversation_id; saveConv();
+    if (typeof data.remaining === "number") $("remain").textContent = `باقي اليوم ${data.remaining} رسالة ·`;
+    if (typeof data.remaining_images === "number") $("remain").textContent = `باقي اليوم ${data.remaining_images} صور ·`;
+    if (isNew) loadConvs();
+  };
   try {
-    const { data, error } = await sb.functions.invoke(imgMode ? "image" : "chat", { body: { conversation_id: convId, message: text, category: curCat, files } });
-    let reply, err, upgrade = false;
-    if (error) { try { const j = await error.context.json(); err = j.error; upgrade = !!j.upgrade; } catch { err = "صار خلل بالاتصال، جرّب مرة ثانية"; } }
-    else reply = data.reply;
-    const body = pending.querySelector(".body");
-    if (err) {
-      body.innerHTML = `<span class="err">⚠️ ${esc(err)}</span>` + (upgrade ? `<br><button class="primary" style="margin-top:10px;width:auto;padding:8px 18px">⭐ شوف الباقات</button>` : "");
-      const ub = body.querySelector("button"); if (ub) ub.onclick = () => showPlans();
+    if (imgMode) {
+      const { data, error } = await sb.functions.invoke("image", { body: { conversation_id: convId, message: text, category: curCat, files } });
+      if (error) { try { const j = await error.context.json(); showErr(j.error, !!j.upgrade); } catch { showErr("صار خلل بالاتصال، جرّب مرة ثانية"); } }
+      else done(data);
+      return;
     }
-    else {
-      body.innerHTML = fmt(reply); addCopy(pending, reply);
-      const isNew = !convId; convId = data.conversation_id; saveConv();
-      if (typeof data.remaining === "number") $("remain").textContent = `باقي اليوم ${data.remaining} رسالة ·`;
-      if (typeof data.remaining_images === "number") $("remain").textContent = `باقي اليوم ${data.remaining_images} صور ·`;
-      if (isNew) loadConvs();
+    if (THINK) pending.querySelector(".shimmer").textContent = "يار يفكر بعمق…";
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/chat`, { method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ conversation_id: convId, message: text, category: curCat, files, mode: MODE, think: THINK, stream: true }) });
+    if (!res.ok || !(res.headers.get("content-type") || "").includes("event-stream")) {
+      let j = {}; try { j = await res.json(); } catch {}
+      showErr(j.error || "صار خلل بالاتصال، جرّب مرة ثانية", !!j.upgrade); return;
     }
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "", acc = "", raf = 0, finished = false;
+    const paint = () => { raf = 0; body.innerHTML = fmt(acc); const c = $("chat"); if (c.scrollHeight - c.scrollTop - c.clientHeight < 160) c.scrollTop = c.scrollHeight; };
+    while (true) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      buf += value; let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+        if (!line.startsWith("data:")) continue;
+        const ev = JSON.parse(line.slice(5));
+        if (ev.conversation_id && !ev.done && !convId) { convId = ev.conversation_id; saveConv(); }
+        if (ev.t) { if (!acc) body.classList.add("cursor"); acc += ev.t; if (!raf) raf = requestAnimationFrame(paint); }
+        if (ev.error) { body.classList.remove("cursor"); showErr(ev.error); finished = true; }
+        if (ev.done) { if (raf) cancelAnimationFrame(raf); done(ev); finished = true; loadConvs(); }
+      }
+    }
+    if (!finished) { body.classList.remove("cursor"); if (acc) { body.innerHTML = fmt(acc); addCopy(pending, acc); } else showErr("انقطع الاتصال، جرّب مرة ثانية"); }
   } finally { busy = false; $("sendBtn").disabled = false; $("chat").scrollTop = $("chat").scrollHeight; }
 }
 function autosize(){ const t=$("input"); t.style.height="auto"; t.style.height=Math.min(t.scrollHeight,180)+"px"; }

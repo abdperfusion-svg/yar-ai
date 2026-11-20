@@ -29,11 +29,11 @@ const EXTRACTOR = `استخرج من آخر رسالة للمستخدم معلو
 رجّع JSON فقط بهذا الشكل: {"add":["جملة قصيرة"],"remove":["نص المعلومة القديمة حرفياً"]}`;
 
 let LAST_SOURCES: { uri: string; title: string }[] = [];
-async function gemini(system: string, contents: unknown[], jsonOut = false, search = false) {
+async function gemini(system: string, contents: unknown[], jsonOut = false, search = false, models: string[] = MODELS) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("NO_KEY");
   let lastErr = "";
-  const tries = MODELS.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
+  const tries = models.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
   for (const [model, useSearch] of tries) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:generateContent`, {
       method: "POST",
@@ -52,10 +52,72 @@ async function gemini(system: string, contents: unknown[], jsonOut = false, sear
       lastErr = "empty";
     } else lastErr = `${r.status} ${await r.text()}`;
   }
+  return await fallbackLLM(system, contents, jsonOut, lastErr);
+}
+
+// نموذج عن طريق OpenRouter (للوضع الخبير: Claude / Grok / GPT)
+async function openrouter(model: string, system: string, contents: unknown[]) {
+  const ork = Deno.env.get("OPENROUTER_API_KEY");
+  if (!ork) throw new Error("no openrouter");
+  const r = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${ork}`, "HTTP-Referer": "https://abdperfusion-svg.github.io/yar-ai/", "X-Title": "YAR AI" },
+    body: JSON.stringify({ model, messages: toMsgs(system, contents), temperature: 0.6 }) });
+  if (!r.ok) throw new Error(`or ${r.status}`);
+  const j = await r.json(); const t = j?.choices?.[0]?.message?.content ?? "";
+  if (!t.trim()) throw new Error("or empty");
+  return t;
+}
+
+function toMsgs(system: string, contents: unknown[]) {
+  return [{ role: "system", content: system }, ...(contents as { role: string; parts: { text?: string }[] }[]).map((c) => ({
+    role: c.role === "model" ? "assistant" : "user", content: c.parts.map((p) => p.text ?? "").join("\n") || "(ملف مرفق)" }))];
+}
+
+// بث الجواب كلمة كلمة من Gemini. إذا كل النماذج وكعت نرجع للاحتياطي (بدون بث)
+async function geminiStream(system: string, contents: unknown[], search: boolean, models: string[], onText: (t: string) => void) {
+  const key = Deno.env.get("GEMINI_API_KEY");
+  if (!key) throw new Error("NO_KEY");
+  let lastErr = "";
+  const tries = models.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
+  for (const [model, useSearch] of tries) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:streamGenerateContent?alt=sse`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents,
+        ...(useSearch ? { tools: [{ google_search: {} }] } : {}), generationConfig: { temperature: 0.6 } }),
+    });
+    if (!r.ok || !r.body) { lastErr = `${r.status} ${await r.text()}`; continue; }
+    const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "", full = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith("data:")) continue;
+        try {
+          const j = JSON.parse(line.slice(5));
+          const c = j?.candidates?.[0];
+          const t = c?.content?.parts?.map((p: { text?: string; thought?: boolean }) => p.thought ? "" : (p.text ?? "")).join("") ?? "";
+          if (t) { full += t; onText(t); }
+          const g = c?.groundingMetadata?.groundingChunks;
+          if (useSearch && g?.length) LAST_SOURCES = g.map((x: { web?: { uri: string; title: string } }) => x.web).filter(Boolean).slice(0, 5);
+        } catch { /* سطر ناقص */ }
+      }
+    }
+    if (full.trim()) return full;
+    lastErr = "empty";
+  }
+  const t = await fallbackLLM(system, contents, false, lastErr);
+  onText(t);
+  return t;
+}
+
+async function fallbackLLM(system: string, contents: unknown[], jsonOut: boolean, lastErr: string) {
   // احتياطي ١: OpenRouter بنماذج مجانية (يشتغل إذا انحط OPENROUTER_API_KEY)
   // احتياطي ٢: Groq (يشتغل إذا انحط GROQ_API_KEY)
-  const msgs = [{ role: "system", content: system }, ...(contents as { role: string; parts: { text?: string }[] }[]).map((c) => ({
-    role: c.role === "model" ? "assistant" : "user", content: c.parts.map((p) => p.text ?? "").join("\n") || "(ملف مرفق)" }))];
+  const msgs = toMsgs(system, contents);
   const clean = (t: string) => jsonOut ? t.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "") : t;
   const ork = Deno.env.get("OPENROUTER_API_KEY");
   if (ork) {
@@ -125,7 +187,7 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "سجّل دخول أول" }, 401);
 
-    const { conversation_id, message, category, files } = await req.json();
+    const { conversation_id, message, category, files, mode, think, stream } = await req.json();
     const text = String(message ?? "").trim().slice(0, 12000);
     if (!text && !(Array.isArray(files) && files.length)) return json({ error: "الرسالة فارغة" }, 400);
 
@@ -170,28 +232,69 @@ Deno.serve(async (req) => {
     const att = (Array.isArray(files) ? files : []).slice(0, 4).filter((f: { mime?: string; data?: string }) => f?.mime && f?.data && f.data.length < 11_000_000);
     contents.push({ role: "user", parts: [...att.map((f: { mime: string; data: string }) => ({ inline_data: { mime_type: f.mime, data: f.data } })), { text: text || "حلل هذا الملف" }] });
 
-    LAST_SOURCES = [];
-    const draft = await gemini(system + `\n\nتاريخ اليوم: ${new Date().toISOString().slice(0, 10)}. إذا السؤال يحتاج معلومات حديثة (أسعار، أخبار، أحداث، أشياء تتغير) استخدم بحث Google.`, contents, false, true);
-    const sources = LAST_SOURCES;
-    let final = draft;
-    if (plan?.review) {
-      try {
-        final = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `الفئة: ${catRow?.name}\nرسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]);
-      } catch { final = draft; }
+    // اختيار النموذج: سريع / برو / خبير (الخبير للمشتركين بس)
+    const paid = (plan?.id ?? "free") !== "free";
+    const md = mode === "fast" ? "fast" : (mode === "expert" && paid ? "expert" : "pro");
+    const deep = !!think;
+    const gModels = md === "fast" ? ["gemini-3.5-flash-lite", ...MODELS]
+      : deep ? [...(Deno.env.get("GEMINI_DEEP_MODELS") ?? "gemini-pro-latest,gemini-3.8-flash").split(","), ...MODELS] : MODELS;
+    let sys = system + `\n\nتاريخ اليوم: ${new Date().toISOString().slice(0, 10)}. إذا السؤال يحتاج معلومات حديثة (أسعار، أخبار، أحداث، أشياء تتغير) استخدم بحث Google.`;
+    if (deep) sys += `\n\nوضع التفكير العميق مفعّل: حلّل السؤال خطوة بخطوة بينك وبين نفسك، تأكد من كل رقم ومعلومة، وفكّر بالاحتمالات قبل ما تجاوب. اكتب الجواب النهائي مرتب ومفصّل وبدون ما تعرض خطوات تفكيرك الداخلية.`;
+    const expertModels = (Deno.env.get("EXPERT_MODELS") ?? "anthropic/claude-sonnet-4.5,x-ai/grok-4").split(",");
+
+    // يولّد الجواب (ببث أو بدون) ويرجع النص الكامل
+    const generate = async (onText?: (t: string) => void) => {
+      LAST_SOURCES = [];
+      if (md === "expert") {
+        for (const m of expertModels) {
+          try { const t = await openrouter(m.trim(), sys, contents); onText?.(t); return t; } catch (e) { console.error("expert", m, String(e)); }
+        }
+      }
+      if (onText) return await geminiStream(sys, contents, true, gModels, onText);
+      let draft = await gemini(sys, contents, false, true, gModels);
+      if (plan?.review) {
+        try { draft = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `الفئة: ${catRow?.name}\nرسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]); } catch { /* نخلي المسودة */ }
+      }
+      return draft;
+    };
+
+    const finish = async (body: string) => {
+      let final = body;
+      if (LAST_SOURCES.length) final += `\n\n**المصادر:**\n${LAST_SOURCES.map((x) => `- [${x.title}](${x.uri})`).join("\n")}`;
+      const shown = att.length ? `📎 ${att.map((f: { name?: string }) => f.name || "ملف").join("، ")}\n${text}` : text;
+      await admin.from("messages").insert([
+        { conversation_id: convId, user_id: user.id, role: "user", content: shown },
+        { conversation_id: convId, user_id: user.id, role: "assistant", content: final },
+      ]);
+      await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+      // الذاكرة والملخص يشتغلون بالخلفية حتى ما يتأخر الجواب
+      if (text) EdgeRuntime.waitUntil(afterReply(admin, user.id, convId, cat, text, mems ?? []));
+      return final;
+    };
+    const meta = { conversation_id: convId, category: cat, remaining: limit - (used ?? 0), plan: plan?.id, mode: md };
+
+    if (stream) {
+      const enc = new TextEncoder();
+      const body = new ReadableStream({
+        async start(ctrl) {
+          const send = (o: unknown) => ctrl.enqueue(enc.encode(`data: ${JSON.stringify(o)}\n\n`));
+          send({ conversation_id: convId });
+          try {
+            const full = await generate((t) => send({ t }));
+            const final = await finish(full);
+            send({ done: true, reply: final, ...meta });
+          } catch (e) {
+            console.error(String(e));
+            send({ error: String((e as Error).message) === "NO_KEY" ? "مفتاح الذكاء الاصطناعي بعده ما انضاف" : "صار خلل مؤقت، جرّب مرة ثانية" });
+          }
+          ctrl.close();
+        },
+      });
+      return new Response(body, { headers: { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
     }
 
-    if (sources.length) final += `\n\n**المصادر:**\n${sources.map((x) => `- [${x.title}](${x.uri})`).join("\n")}`;
-    const shown = att.length ? `📎 ${att.map((f: { name?: string }) => f.name || "ملف").join("، ")}\n${text}` : text;
-    await admin.from("messages").insert([
-      { conversation_id: convId, user_id: user.id, role: "user", content: shown },
-      { conversation_id: convId, user_id: user.id, role: "assistant", content: final },
-    ]);
-    await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
-
-    // الذاكرة والملخص يشتغلون بالخلفية حتى ما يتأخر الجواب
-    if (text) EdgeRuntime.waitUntil(afterReply(admin, user.id, convId, cat, text, mems ?? []));
-
-    return json({ conversation_id: convId, category: cat, reply: final, remaining: limit - (used ?? 0), plan: plan?.id });
+    const final = await finish(await generate());
+    return json({ ...meta, reply: final });
   } catch (e) {
     const m = String((e as Error).message);
     if (m === "NO_KEY") return json({ error: "مفتاح الذكاء الاصطناعي بعده ما انضاف" }, 503);
