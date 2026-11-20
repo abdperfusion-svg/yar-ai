@@ -259,7 +259,7 @@ $("authBtn").onclick = async () => {
   const email = $("email").value.trim(), password = $("pass").value;
   if (!email || password.length < 6) { $("authMsg").textContent = "اكتب إيميل صحيح وكلمة سر ٦ أحرف أو أكثر"; return; }
   $("authBtn").disabled = true; $("authMsg").textContent = "لحظة…";
-  const r = signup ? await sb.auth.signUp({ email, password }) : await sb.auth.signInWithPassword({ email, password });
+  const r = signup ? await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }) : await sb.auth.signInWithPassword({ email, password });
   $("authBtn").disabled = false;
   if (r.error) { $("authMsg").textContent = /Invalid login/i.test(r.error.message) ? "الإيميل أو كلمة السر غلط" : r.error.message; return; }
   if (signup && !r.data.session) $("authMsg").textContent = "✅ دزّينالك رسالة تأكيد على الإيميل، افتحها وبعدين سجّل دخول";
