@@ -14,11 +14,33 @@ If the user wants text in the image, put the exact text in quotes. No nudity, no
 Return JSON only: {"prompt":"...","aspect":"1:1|4:5|9:16|16:9","caption":"one short Iraqi-Arabic sentence describing exactly what was drawn"}`;
 
 async function gemText(system: string, text: string) {
+  // ١) Cloudflare (رصيد مجاني منفصل عن Google وسريع)
+  const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
+  if (cfAcc && cfTok) {
+    const t = Date.now();
+    try {
+      const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast`, {
+        method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: T(15000),
+        body: JSON.stringify({ messages: [{ role: "system", content: system }, { role: "user", content: text }], max_tokens: 600, temperature: 0.7 }) });
+      const j = r.ok ? await r.json() : null;
+      let out = j?.result?.response;
+      if (out && typeof out !== "string") out = JSON.stringify(out);
+      console.log("prompt-model cloudflare", r.status, Date.now() - t);
+      if (out) { const m = String(out).match(/\{[\s\S]*\}/); if (m) { JSON.parse(m[0]); return m[0]; } }
+    } catch (e) { console.error("prompt cloudflare", String(e)); }
+  }
+  // ٢) Google احتياط
   const key = Deno.env.get("GEMINI_API_KEY")!;
   for (const m of TEXT_MODELS) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m.trim()}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, signal: T(12000),
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text }] }], generationConfig: { temperature: 0.7, responseMimeType: "application/json" } }) }).catch(() => null);
-    if (r?.ok) { const j = await r.json(); const t = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join(""); if (t) return t; }
+    // بدون «تفكير»: وصف الصورة شغلة بسيطة وما تحتاج انتظار
+    for (const think of [{ thinkingConfig: { thinkingBudget: 0 } }, {}]) {
+      const t = Date.now();
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m.trim()}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, signal: T(8000),
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text }] }], generationConfig: { temperature: 0.7, responseMimeType: "application/json", ...think } }) }).catch(() => null);
+      console.log("prompt-model", m, Object.keys(think).length ? "nothink" : "think", r?.status, Date.now() - t);
+      if (r?.ok) { const j = await r.json(); const out = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join(""); if (out) return out; }
+      if (r?.status !== 400) break; // 400 = النموذج ما يقبل إيقاف التفكير، نجرب بدونه
+    }
   }
   throw new Error("prompt failed");
 }

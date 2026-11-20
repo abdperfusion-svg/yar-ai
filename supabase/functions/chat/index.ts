@@ -34,7 +34,9 @@ async function gemini(system: string, contents: unknown[], jsonOut = false, sear
   if (!key) throw new Error("NO_KEY");
   let lastErr = "";
   const tries = models.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
+  const dead = new Set<string>();
   for (const [model, useSearch] of tries) {
+    if (dead.has(model)) continue;
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -50,7 +52,7 @@ async function gemini(system: string, contents: unknown[], jsonOut = false, sear
       const t = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
       if (t.trim()) return t;
       lastErr = "empty";
-    } else lastErr = `${r.status} ${await r.text()}`;
+    } else { lastErr = `${r.status} ${await r.text()}`; if (r.status === 429 || r.status === 404) dead.add(model); }
   }
   return await fallbackLLM(system, contents, jsonOut, lastErr);
 }
@@ -79,13 +81,15 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
   if (!key) throw new Error("NO_KEY");
   let lastErr = "";
   const tries = models.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
+  const dead = new Set<string>();
   for (const [model, useSearch] of tries) {
+    if (dead.has(model)) continue; // رصيد هذا النموذج خالص: لا نضيّع وقت عليه
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:streamGenerateContent?alt=sse`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents,
         ...(useSearch ? { tools: [{ google_search: {} }] } : {}), generationConfig: { temperature: 0.6 } }),
     });
-    if (!r.ok || !r.body) { lastErr = `${r.status} ${await r.text()}`; continue; }
+    if (!r.ok || !r.body) { lastErr = `${r.status} ${await r.text()}`; if (r.status === 429 || r.status === 404) dead.add(model); console.error("gemini", model, r.status); continue; }
     const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "", full = "";
     while (true) {
@@ -119,6 +123,17 @@ async function fallbackLLM(system: string, contents: unknown[], jsonOut: boolean
   // احتياطي ٢: Groq (يشتغل إذا انحط GROQ_API_KEY)
   const msgs = toMsgs(system, contents);
   const clean = (t: string) => jsonOut ? t.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "") : t;
+  // احتياط سريع: Cloudflare (رصيد مجاني منفصل عن Google)
+  const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
+  if (cfAcc && cfTok) {
+    try {
+      const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/${Deno.env.get("CF_TEXT_MODEL") ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast"}`, {
+        method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(40000),
+        body: JSON.stringify({ messages: msgs, max_tokens: 2500, temperature: jsonOut ? 0.1 : 0.6 }) });
+      if (r.ok) { const j = await r.json(); let t = j?.result?.response; if (t && typeof t !== "string") t = JSON.stringify(t); if (t && String(t).trim()) return clean(String(t)); }
+      lastErr += ` | cf ${r.status}`;
+    } catch (e) { lastErr += ` | cf ${e}`; }
+  }
   const ork = Deno.env.get("OPENROUTER_API_KEY");
   if (ork) {
     const orModels = (Deno.env.get("OPENROUTER_MODELS") ?? "openrouter/free").split(",");
