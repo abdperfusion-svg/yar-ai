@@ -714,7 +714,7 @@ async function send(){
     body.classList.remove("cursor");
     body.innerHTML = fmt(data.reply); addCopy(pending, data.reply);
     const isNew = !convId; convId = data.conversation_id; saveConv();
-    if (typeof data.remaining === "number") $("remain").textContent = `باقي اليوم ${data.remaining} رسالة ·`;
+    if (typeof data.remaining === "number") $("remain").textContent = data.remaining > 9999 ? "محادثة بلا حدود ·" : `باقي اليوم ${data.remaining} رسالة ·`;
     if (typeof data.remaining_images === "number") $("remain").textContent = `باقي اليوم ${data.remaining_images} صور ·`;
     if (isNew) loadConvs();
   };
@@ -839,7 +839,7 @@ async function loadAccount(){
 }
 
 function planFeatures(pl){
-  const f = [`${pl.daily_limit} رسالة باليوم`, `${pl.image_limit ?? 3} صور باليوم`];
+  const f = [pl.daily_limit > 9999 ? "محادثة بلا حدود" : `${pl.daily_limit} رسالة باليوم`, `${pl.image_limit ?? 3} صور باليوم`];
   if (pl.id === "free") f.push("يار سريع وبرو", "بحث عميق (يحسب ٣ رسائل)", "تصدير Word و PowerPoint و Excel");
   if (pl.id === "student") f.push("مراجعة ذاتية تقلل الأخطاء", "سمينارات وبحوث بمراجع حقيقية", "رفع ملفات PDF وصور");
   if (pl.id === "pro") f.push("مراجعة ذاتية تقلل الأخطاء", "صور Gemini الاحترافية", "💎 وضع خبير (Claude / Grok)");
