@@ -108,6 +108,23 @@ async function freeImage(prompt: string, w: number, h: number): Promise<Uint8Arr
 
   // ١) Cloudflare Workers AI (مجاني يومياً) — يشتغل إذا انحط CF_ACCOUNT_ID و CF_API_TOKEN
   const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
+  // ١) Flux 2: دقة أعلى وتفاصيل أحسن، وبالمقاس المطلوب
+  if (cfAcc && cfTok) {
+    for (const model of ["@cf/black-forest-labs/flux-2-klein-9b", "@cf/black-forest-labs/flux-2-klein-4b"]) {
+      const t = Date.now();
+      try {
+        const form = new FormData();
+        form.append("prompt", p); form.append("width", String(w)); form.append("height", String(h)); form.append("seed", String(seed));
+        const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/${model}`, { method: "POST", headers: { Authorization: `Bearer ${cfTok}` }, signal: T(45000), body: form });
+        console.log("gen", model, r.status, Date.now() - t);
+        if (r.ok) {
+          const ct = r.headers.get("content-type") ?? "";
+          if (ct.startsWith("image/")) return new Uint8Array(await r.arrayBuffer());
+          const j = await r.json(); if (j?.result?.image) return b64(j.result.image);
+        } else console.error("gen", model, (await r.text()).slice(0, 200));
+      } catch (e) { console.error("gen", model, String(e)); }
+    }
+  }
   if (cfAcc && cfTok) {
     try {
       const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/@cf/black-forest-labs/flux-1-schnell`, {
@@ -139,7 +156,7 @@ async function freeImage(prompt: string, w: number, h: number): Promise<Uint8Arr
   return null;
 }
 
-const SIZES: Record<string, [number, number]> = { "1:1": [1024, 1024], "4:5": [896, 1120], "9:16": [768, 1365], "16:9": [1365, 768] };
+const SIZES: Record<string, [number, number]> = { "1:1": [1440, 1440], "4:5": [1152, 1440], "9:16": [1080, 1920], "16:9": [1920, 1080] };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });

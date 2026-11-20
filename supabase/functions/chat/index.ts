@@ -15,7 +15,9 @@ const PERSONA = `إنت "يار" (YAR AI)، مساعد ذكاء اصطناعي �
 - تعرف العراق زين: المدن، العادات، المناسبات، الأكلات، الجامعات، والسوق المحلي.
 - الدقة أهم شي: إذا ما متأكد من معلومة گول بصراحة "مو متأكد"، ولا تخترع أرقام أو أسماء أو مصادر.
 - بالأمور الطبية والقانونية والمالية: تنطي معلومة عامة وتنصح بمراجعة مختص.
-- استخدم اللي تعرفه عن المستخدم (من الذاكرة) بشكل طبيعي بدون ما تگول "حسب ذاكرتي".
+- استخدم اللي تعرفه عن المستخدم (من الذاكرة وملفه) بشكل طبيعي بدون ما تگول "حسب ذاكرتي".
+- لا تسأل المستخدم عن شي موجود بذاكرتك أو ملفه أبداً (اسمه، عمره، شغله، دراسته، مدينته، عائلته، تفضيلاته). استخدمه مباشرة.
+- إذا احتجت معلومة ناقصة حتى تجاوب زين، اسأل عنها مرة وحدة بس، وهي راح تنحفظ.
 - الأجوبة مرتبة وبدون حشو.`;
 
 const REVIEWER = `إنت مراجع جودة. راح توصلك رسالة المستخدم ومسودة الجواب.
@@ -23,17 +25,23 @@ const REVIEWER = `إنت مراجع جودة. راح توصلك رسالة ال�
 إذا المسودة صحيحة رجّعها مثل ما هي. إذا بيها غلط صحّحه.
 رجّع الجواب النهائي فقط، بدون أي تعليق منك.`;
 
-const EXTRACTOR = `استخرج من آخر رسالة للمستخدم معلومات ثابتة ومفيدة عنه للمستقبل: اسمه، دراسته أو تخصصه، جامعته، مرحلته، شغله، مدينته، مشاريعه وبحوثه الجارية، أدواته ولغاته البرمجية، تفضيلاته بطريقة الجواب.
-لا تحفظ: الأسئلة العابرة، المعلومات الصحية أو المالية الحساسة، كلمات السر، أرقام الهويات والحسابات.
+const EXTRACTOR = `إنت ذاكرة "يار". استخرج من آخر رسالة للمستخدم كل معلومة ثابتة ومفيدة عنه للمستقبل:
+الاسم، العمر أو سنة الميلاد، الجنس، المدينة، الشغل ومكانه، الدراسة والتخصص والجامعة والمرحلة، العائلة (متزوج، أطفال وأسمائهم)، المشاريع والأهداف الجارية، المهارات والأدوات واللغات، الاهتمامات والهوايات، تفضيلاته بطريقة الجواب (طول، لغة، أسلوب)، وأي قرار أو معلومة ذكرها حتى ما يعيدها.
+لا تحفظ: الأسئلة العابرة، كلمات السر، أرقام الهويات والبطاقات والحسابات المصرفية.
+كل معلومة جملة قصيرة واضحة تبدي بالموضوع، مثلاً: "اسمه محمد"، "عمره 24 سنة"، "يشتغل ممرض بمستشفى آزادي".
 لا تكرر شي موجود بالقائمة الحالية. إذا معلومة جديدة تصحح قديمة، حط القديمة بـ remove.
-رجّع JSON فقط بهذا الشكل: {"add":["جملة قصيرة"],"remove":["نص المعلومة القديمة حرفياً"]}`;
+واملأ profile بس للحقول اللي ذكرها صراحة بهالرسالة (وإلا اتركها فارغة).
+رجّع JSON فقط بهذا الشكل: {"add":["..."],"remove":["نص المعلومة القديمة حرفياً"],"profile":{"full_name":"","city":"","specialty":"","institution":"","stage":""}}`;
 
 let LAST_SOURCES: { uri: string; title: string }[] = [];
+let GEM_DOWN_UNTIL = 0; // إذا كل نماذج جوجل رصيدها خالص، ما نضيع وقت عليها لـ٥ دقايق
+const gemDown = () => Date.now() < GEM_DOWN_UNTIL;
+const markDown = (dead: Set<string>, models: string[]) => { if (models.every((m) => dead.has(m))) GEM_DOWN_UNTIL = Date.now() + 5 * 60_000; };
 async function gemini(system: string, contents: unknown[], jsonOut = false, search = false, models: string[] = MODELS) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("NO_KEY");
   let lastErr = "";
-  const tries = models.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
+  const tries = gemDown() ? [] : models.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
   const dead = new Set<string>();
   for (const [model, useSearch] of tries) {
     if (dead.has(model)) continue;
@@ -54,6 +62,7 @@ async function gemini(system: string, contents: unknown[], jsonOut = false, sear
       lastErr = "empty";
     } else { lastErr = `${r.status} ${await r.text()}`; if (r.status === 429 || r.status === 404) dead.add(model); }
   }
+  markDown(dead, models);
   return await fallbackLLM(system, contents, jsonOut, lastErr);
 }
 
@@ -80,7 +89,7 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("NO_KEY");
   let lastErr = "";
-  const tries = models.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
+  const tries = gemDown() ? [] : models.flatMap((m) => search ? [[m, true], [m, false]] : [[m, false]]) as [string, boolean][];
   const dead = new Set<string>();
   for (const [model, useSearch] of tries) {
     if (dead.has(model)) continue; // رصيد هذا النموذج خالص: لا نضيّع وقت عليه
@@ -113,9 +122,38 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
     if (full.trim()) return full;
     lastErr = "empty";
   }
+  markDown(dead, models);
+  // احتياط سريع ويا بث: Cloudflare يكتب الجواب كلمة كلمة
+  const st = await cfStream(system, contents, onText);
+  if (st) return st;
   const t = await fallbackLLM(system, contents, false, lastErr);
   onText(t);
   return t;
+}
+
+async function cfStream(system: string, contents: unknown[], onText: (t: string) => void): Promise<string | null> {
+  const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
+  if (!cfAcc || !cfTok) return null;
+  try {
+    const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/${Deno.env.get("CF_TEXT_MODEL") ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast"}`, {
+      method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(60000),
+      body: JSON.stringify({ messages: toMsgs(system, contents), max_tokens: 2500, temperature: 0.6, stream: true }) });
+    if (!r.ok || !r.body) { console.error("cf stream", r.status); return null; }
+    const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "", full = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith("data:") || line.includes("[DONE]")) continue;
+        try { const t = JSON.parse(line.slice(5))?.response; if (t) { full += t; onText(t); } } catch { /* */ }
+      }
+    }
+    return full.trim() ? full : null;
+  } catch (e) { console.error("cf stream", String(e)); return null; }
 }
 
 async function fallbackLLM(system: string, contents: unknown[], jsonOut: boolean, lastErr: string) {
@@ -167,7 +205,17 @@ async function afterReply(admin: any, userId: string, convId: string, category: 
   // ١) ذاكرة طويلة: استخراج معلومات جديدة عن المستخدم
   try {
     const out = await gemini(EXTRACTOR, [{ role: "user", parts: [{ text: `القائمة الحالية:\n${mems.map((m) => "- " + m.fact).join("\n") || "(فارغة)"}\n\nرسالة المستخدم:\n${text}` }] }], true);
-    const { add = [], remove = [] } = JSON.parse(out);
+    const { add = [], remove = [], profile = {} } = JSON.parse(String(out).match(/\{[\s\S]*\}/)?.[0] ?? "{}");
+    // نملأ الملف الشخصي تلقائياً (بس الحقول الفارغة)
+    try {
+      const { data: pr } = await admin.from("profiles").select("full_name,city,specialty,institution,stage").eq("user_id", userId).maybeSingle();
+      const upd: Record<string, string> = {};
+      for (const k of ["full_name", "city", "specialty", "institution", "stage"]) {
+        const v = typeof profile?.[k] === "string" ? profile[k].trim().slice(0, 120) : "";
+        if (v && !(pr as Record<string, string> | null)?.[k]) upd[k] = v;
+      }
+      if (Object.keys(upd).length) await admin.from("profiles").update(upd).eq("user_id", userId);
+    } catch { /* */ }
     const del = mems.filter((m) => (remove as string[]).includes(m.fact)).map((m) => m.id);
     if (del.length) await admin.from("memories").delete().in("id", del);
     const rows = (add as string[]).filter((f) => typeof f === "string" && f.trim().length > 3).slice(0, 5)
@@ -265,7 +313,7 @@ Deno.serve(async (req) => {
     let sys = system + `\n\nتاريخ اليوم: ${new Date().toISOString().slice(0, 10)}. إذا السؤال يحتاج معلومات حديثة (أسعار، أخبار، أحداث، أشياء تتغير) استخدم بحث Google.`;
     if (deep) sys += `\n\nوضع التفكير العميق مفعّل: حلّل السؤال خطوة بخطوة بينك وبين نفسك، تأكد من كل رقم ومعلومة، وفكّر بالاحتمالات قبل ما تجاوب. اكتب الجواب النهائي مرتب ومفصّل وبدون ما تعرض خطوات تفكيرك الداخلية.`;
     const imgs = att.filter((f: { mime: string }) => f.mime.startsWith("image/"));
-    if (imgs.length) sys += `\n\nالمستخدم رفع صورة. تكدر تشوفها وتحللها وتوصفها وتطلع النص منها. إذا طلب تعديل الصورة نفسها (حذف خلفية، تغيير لون، إضافة كتابة...) گله بلطف إن تعديل الصور المرفوعة جاي قريباً بيار، وهسه يكدر يسوي صورة جديدة من زر 🎨 داخل علامة +، واكتبله وصف جاهز للصورة المطلوبة يستخدمه.`;
+    if (imgs.length) sys += `\n\nالمستخدم رفع صورة. تكدر تشوفها وتحللها وتوصفها وتطلع النص منها. إذا طلب تعديل الصورة نفسها (حذف خلفية، تغيير لون، إضافة كتابة...) گله يضغط علامة + ويشغّل زر 🎨 «صورة»، ويرفع صورته ويكتب التعديل اللي يريده، ويار يعدّلها خلال ثواني.`;
     const useSearch = !yt.length && !att.length; // ويا الملفات نخلي البحث حتى يكون الجواب أسرع وما يعلّق
     const expertModels = (Deno.env.get("EXPERT_MODELS") ?? "anthropic/claude-sonnet-4.5,x-ai/grok-4").split(",");
 
