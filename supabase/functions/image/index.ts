@@ -176,7 +176,13 @@ Deno.serve(async (req) => {
     const { data: plan } = await admin.from("plans").select("*").eq("id", planId ?? "free").single();
     const limit = plan?.image_limit ?? 3;
     const { data: used } = await admin.rpc("bump_images", { p_user: user.id, p_limit: limit });
-    if (used === -1) return json({ error: `وصلت حد الصور اليومي لباقة ${plan?.name ?? "المجاني"} (${limit} صور). اشترك بباقة أعلى أو ارجع باچر.`, upgrade: true }, 429);
+    // خلصت صور اليوم المجانية؟ ناخذ نقطة وحدة من رصيد النقاط
+    let pointPaid = false, pointsLeft: number | null = null;
+    if (used === -1) {
+      const { data: left } = await admin.rpc("spend_points", { p_user: user.id, p_cost: 1, p_reason: hasRef ? "تعديل صورة" : "صورة" });
+      if (left === -1 || left === null) return json({ error: `خلصت صورك المجانية لليوم (${limit} صور) ونقاطك ما تكفي. اشحن نقاط من «الباقات والنقاط» أو ارجع باچر.`, upgrade: true }, 429);
+      pointPaid = true; pointsLeft = left;
+    }
 
     let spec = { prompt: text, aspect: "1:1", caption: "هاي الصورة اللي طلبتها" };
     const tp = Date.now();
@@ -195,7 +201,8 @@ Deno.serve(async (req) => {
     if (!bytes) { const [w, h] = SIZES[spec.aspect]; bytes = await freeImage(spec.prompt, w, h); }
     console.log("image-time", Date.now() - t0, "ms");
     if (!bytes) {
-      await admin.rpc("bump_images", { p_user: user.id, p_limit: -999 }).then(() => {}, () => {}); // ما تنحسب محاولة فاشلة
+      if (pointPaid) await admin.rpc("refund_points", { p_user: user.id, p_amount: 1, p_reason: "إرجاع: صورة ما طلعت" }).then(() => {}, () => {});
+      else await admin.rpc("bump_images", { p_user: user.id, p_limit: -999 }).then(() => {}, () => {}); // ما تنحسب محاولة فاشلة
       return json({ error: "خدمة الصور المجانية مزدحمة هسه. جرّب بعد شوية، وهاي المحاولة ما انحسبت من رصيدك." }, 503);
     }
 
@@ -219,7 +226,7 @@ Deno.serve(async (req) => {
       { conversation_id: convId, user_id: user.id, role: "assistant", content: reply },
     ]);
     await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
-    return json({ conversation_id: convId, reply, image: imageUrl, remaining_images: limit - (used ?? 0) });
+    return json({ conversation_id: convId, reply, image: imageUrl, remaining_images: pointPaid ? 0 : limit - (used ?? 0), points: pointsLeft });
   } catch (e) {
     console.error(String(e));
     return json({ error: "صار خلل بتوليد الصورة، جرّب مرة ثانية" }, 500);

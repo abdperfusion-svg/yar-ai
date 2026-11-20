@@ -266,7 +266,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
       <div class="menu" id="meMenu">
         <button id="memBtn">🧠 ذاكرتي وملفي</button>
         <button id="connBtn">🔗 حساباتي المربوطة</button>
-        <button id="planBtn">⭐ الباقات والاشتراك</button>
+        <button id="planBtn">⭐ الباقات والنقاط</button>
         <button id="adminBtn" style="display:none">🛠️ لوحة التحكم</button>
         <button id="logoutBtn">↩️ تسجيل خروج</button>
       </div>
@@ -334,7 +334,7 @@ let MODE = (()=>{ try { return localStorage.getItem("yar_mode") || "pro"; } catc
 const MODES = [
   { id:"fast", icon:"⚡", name:"يار سريع", blurb:"جواب فوري للأسئلة البسيطة" },
   { id:"pro", icon:"✦", name:"يار برو", blurb:"متوازن وذكي، الأنسب لأغلب الشغل" },
-  { id:"expert", icon:"💎", name:"يار خبير", blurb:"أقوى نماذج العالم (Claude / Grok) — للمشتركين" },
+  { id:"expert", icon:"💎", name:"يار خبير", blurb:"أقوى نماذج العالم — مجاني للمشتركين، أو ٣ نقاط للسؤال" },
 ];
 
 const STARTERS = [
@@ -689,7 +689,7 @@ function setMode(){
   $("modeLabel").textContent = `${m.icon} ${m.name.replace("يار ","")}`;
   $("modeMenu").innerHTML = MODES.map(x=>`<button type="button" data-m="${x.id}" class="${x.id===MODE?'on':''}"><span class="ic">${x.icon}</span><span><b>${x.name}</b><small>${x.blurb}</small></span></button>`).join("");
   $("modeMenu").querySelectorAll("[data-m]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); $("modeMenu").classList.remove("open");
-    if (b.dataset.m === "expert" && (typeof ME === "undefined" || !ME?.plan || ME.plan === "free")) { showPlans(); return; }
+    if (b.dataset.m === "expert" && (typeof ME === "undefined" || !ME?.plan || ME.plan === "free") && (ME?.points ?? 0) < 3) { showPlans(); return; }
     MODE = b.dataset.m; try { localStorage.setItem("yar_mode", MODE); } catch {} setMode(); });
 }
 setMode();
@@ -769,6 +769,7 @@ async function send(){
     body.innerHTML = fmt(data.reply); addCopy(pending, data.reply);
     const isNew = !convId; convId = data.conversation_id; saveConv();
     if (typeof data.remaining === "number") $("remain").textContent = data.remaining > 9999 ? "محادثة بلا حدود ·" : `باقي اليوم ${data.remaining} رسالة ·`;
+    if (typeof data.points === "number") showPoints(data.points);
     if (typeof data.remaining_images === "number") $("remain").textContent = `باقي اليوم ${data.remaining_images} صور ·`;
     if (isNew) loadConvs();
   };
@@ -860,7 +861,7 @@ function showNewPassword(){
 }
 
 /* ===== الاشتراكات ===== */
-let PLANS = [], SETTINGS = {}, ME = null, IS_ADMIN = false;
+let PLANS = [], PACKS = [], SETTINGS = {}, ME = null, IS_ADMIN = false;
 const iqd = n => n.toLocaleString("ar-IQ") + " دينار";
 const dateAr = d => new Date(d).toLocaleDateString("ar-IQ", { year:"numeric", month:"long", day:"numeric" });
 function openModal(html){ $("modalBody").innerHTML = html; $("overlay").classList.add("show"); }
@@ -870,12 +871,14 @@ $("overlay").onclick = e => { if (e.target.id === "overlay") closeModal(); };
 
 async function loadAccount(){
   const uid = (await sb.auth.getUser()).data.user?.id;
-  const [p, s, me, adm] = await Promise.all([
+  const [p, s, me, adm, pk] = await Promise.all([
     sb.from("plans").select("*").order("sort"),
     sb.from("settings").select("key,value"),
-    sb.from("profiles").select("plan,plan_until,full_name,category,specialty,institution,stage,city,about,onboarded").eq("user_id", uid).maybeSingle(),
+    sb.from("profiles").select("plan,plan_until,points,full_name,category,specialty,institution,stage,city,about,onboarded").eq("user_id", uid).maybeSingle(),
     sb.rpc("is_admin"),
+    sb.from("point_packs").select("*").order("sort"),
   ]);
+  PACKS = pk.data || [];
   PLANS = p.data || []; SETTINGS = Object.fromEntries((s.data||[]).map(r=>[r.key,r.value]));
   ME = me.data || { plan:"free" }; IS_ADMIN = !!adm.data; PROF = me.data || {};
   if (PROF.category && !convId && !localStorage.getItem("yar_conv")) { curCat = PROF.category; setCatLabel(); welcome(); }
@@ -890,6 +893,7 @@ async function loadAccount(){
   $("meName").textContent = PROF.full_name || (await sb.auth.getUser()).data.user?.email || "حسابي";
   $("meAv").textContent = (PROF.full_name || "؟").trim().charAt(0);
   $("adminBtn").style.display = IS_ADMIN ? "flex" : "none";
+  showPoints(ME.points);
   const left = active ? (new Date(ME.plan_until) - new Date()) / 864e5 : 99;
   $("expiryBar").style.display = left <= 2 ? "block" : "none";
   if (left <= 2) $("expiryBar").textContent = `⏰ اشتراكك ينتهي ${dateAr(ME.plan_until)}. جدّده حتى ما يرجع للمجاني.`;
@@ -909,24 +913,42 @@ function planCard(pl, sel){
     <div class="p">${pl.price_iqd ? pl.price_iqd.toLocaleString("ar-IQ") : "٠"} <small>${pl.price_iqd?'دينار / شهر':'مجاناً'}</small></div>
     <ul>${planFeatures(pl).map(f=>`<li>• ${f}</li>`).join("")}</ul></div>`;
 }
+function showPoints(n){
+  if (typeof n !== "number") return;
+  if (ME) ME.points = n;
+  $("planBtn").textContent = `⭐ الباقات والنقاط · ${n.toLocaleString("ar-IQ")} نقطة`;
+}
+const isPack = id => PACKS.some(k=>k.id===id);
+function packCard(k, sel){
+  return `<div class="plan ${sel?'sel':''}" data-id="${k.id}">
+    <div style="font-weight:800">${esc(k.name)}</div>
+    <div class="p">${k.points.toLocaleString("ar-IQ")} <small>نقطة</small></div>
+    <ul><li>• بسعر ${iqd(k.price_iqd)}</li><li>• ${k.points.toLocaleString("ar-IQ")} صورة إضافية</li><li>• أو ${Math.floor(k.points/3).toLocaleString("ar-IQ")} سؤال خبير</li></ul></div>`;
+}
 async function showPlans(selId){
   const { data: reqs } = await sb.from("payment_requests").select("plan,status,created_at").order("created_at",{ascending:false}).limit(1);
   const pending = reqs?.[0]?.status === "pending";
   const paid = PLANS.filter(p=>p.price_iqd>0);
-  const sel = selId || (paid.find(p=>p.id!==ME.plan)?.id ?? paid[0]?.id);
-  const selPlan = PLANS.find(p=>p.id===sel);
-  openModal(`<h3>باقات YAR AI</h3>
+  const sel = selId || PACKS[0]?.id || (paid.find(p=>p.id!==ME.plan)?.id ?? paid[0]?.id);
+  const item = PACKS.find(k=>k.id===sel) || PLANS.find(p=>p.id===sel);
+  const pk = isPack(sel);
+  openModal(`<h3>النقاط والباقات</h3>
+    <div class="sub">المحادثة مجانية وبلا حدود. النقاط للأشياء الإضافية: كل صورة بعد صورك المجانية اليومية = نقطة، وكل سؤال بوضع الخبير = ٣ نقاط.</div>
+    <div class="pay" style="text-align:center">💰 رصيدك هسه: <b>${(ME.points ?? 0).toLocaleString("ar-IQ")} نقطة</b></div>
+    <div class="sub" style="font-weight:700;margin-top:10px">اشحن نقاط:</div>
+    <div class="plans">${PACKS.map(k=>packCard(k,k.id===sel)).join("")}</div>
+    <div class="sub" style="font-weight:700;margin-top:10px">أو اشترك شهري:</div>
     <div class="sub">${ME.plan==='free'?'إنت هسه على الباقة المجانية.':`باقتك: ${PLANS.find(p=>p.id===ME.plan)?.name}، تنتهي ${dateAr(ME.plan_until)}.`}</div>
     <div class="plans">${PLANS.map(p=>planCard(p,p.id===sel)).join("")}</div>
     ${pending ? `<div class="pay">⏳ طلبك وصلنا وراح يتفعّل خلال ساعات بإذن الله.</div>` : `
-    <div class="pay">للاشتراك بباقة <b>${selPlan.name}</b> حوّل <b>${iqd(selPlan.price_iqd)}</b><br>
+    <div class="pay">${pk?`حتى تشحن <b>${item.points.toLocaleString("ar-IQ")} نقطة</b>`:`للاشتراك بباقة <b>${item.name}</b>`} حوّل <b>${iqd(item.price_iqd)}</b><br>
       عن طريق <b>${esc(SETTINGS.payment_method||'سوبر كي')}</b> على الرقم: <b dir="ltr">${esc(SETTINGS.payment_number||'—')}</b><br>
-      وبعدها اكتب <b>رقم الوصل</b> هنا، ونفعّل اشتراكك لمدة شهر خلال ساعات.</div>
+      وبعدها اكتب <b>رقم الوصل</b> هنا، و${pk?'تنضاف نقاطك':'نفعّل اشتراكك لمدة شهر'} خلال ساعات.</div>
     <input class="field" id="sender" inputmode="numeric" placeholder="رقم الوصل (رقم العملية)" dir="ltr">
     <input class="field" id="pnote" placeholder="ملاحظة (اختياري)">
-    <button class="primary" id="sendReq">حوّلت، فعّلولي الاشتراك</button>
+    <button class="primary" id="sendReq">حوّلت، ${pk?'ضيفولي النقاط':'فعّلولي الاشتراك'}</button>
     <div class="msg" id="reqMsg"></div>`}`);
-  $("modalBody").querySelectorAll(".plan").forEach(el=>el.onclick=()=>{ if (PLANS.find(p=>p.id===el.dataset.id).price_iqd>0) showPlans(el.dataset.id); });
+  $("modalBody").querySelectorAll(".plan").forEach(el=>el.onclick=()=>{ const id = el.dataset.id; if (isPack(id) || PLANS.find(p=>p.id===id)?.price_iqd>0) showPlans(id); });
   const btn = $("sendReq"); if (!btn) return;
   btn.onclick = async () => {
     const sender = $("sender").value.trim();
@@ -1039,9 +1061,9 @@ async function showAdmin(){
   const income = paying.reduce((s,x)=>s+(PLANS.find(p=>p.id===x.plan)?.price_iqd||0),0);
   let body = "";
   if (adminTab === "requests") {
-    body = pend.length ? pend.map(q=>`<div class="row"><div class="t"><span class="em">${esc(byId[q.user_id]?.email||'—')}</span><span class="badge ${q.plan}">${PLANS.find(p=>p.id===q.plan)?.name}</span></div>
+    body = pend.length ? pend.map(q=>`<div class="row"><div class="t"><span class="em">${esc(byId[q.user_id]?.email||'—')}</span><span class="badge ${q.plan}">${isPack(q.plan) ? '💰 '+(PACKS.find(k=>k.id===q.plan)?.points||'')+' نقطة' : PLANS.find(p=>p.id===q.plan)?.name}</span></div>
       <div>رقم الوصل: <b dir="ltr">${esc(q.sender)}</b> · ${dateAr(q.created_at)}</div>${q.note?`<div style="color:var(--muted)">${esc(q.note)}</div>`:''}
-      <div class="acts"><button class="ok" data-act="approve" data-u="${q.user_id}" data-p="${q.plan}">✓ وصل المبلغ، فعّل شهر</button><button class="no" data-act="reject" data-r="${q.id}">✕ رفض</button></div></div>`).join("")
+      <div class="acts">${isPack(q.plan) ? `<button class="ok" data-act="points" data-u="${q.user_id}" data-p="${q.plan}">✓ وصل المبلغ، ضيف النقاط</button>` : `<button class="ok" data-act="approve" data-u="${q.user_id}" data-p="${q.plan}">✓ وصل المبلغ، فعّل شهر</button>`}<button class="no" data-act="reject" data-r="${q.id}">✕ رفض</button></div></div>`).join("")
       : `<div class="sub">ماكو طلبات جديدة.</div>`;
   } else if (adminTab === "users") {
     body = `<input class="field" id="q" placeholder="ابحث بالإيميل" dir="ltr">` + `<div id="ulist">${users.map(x=>`<div class="row" data-em="${esc((x.email||'').toLowerCase())}"><div class="t"><span class="em">${esc(x.email||'—')}</span><span class="badge ${x.plan}">${PLANS.find(p=>p.id===x.plan)?.name}</span></div>
@@ -1072,6 +1094,7 @@ async function showAdmin(){
   m.querySelectorAll("[data-act]").forEach(b=>b.onclick=async()=>{
     b.disabled = true;
     if (b.dataset.act==="approve") await sb.rpc("admin_set_plan",{p_user:b.dataset.u,p_plan:b.dataset.p,p_days:30});
+    if (b.dataset.act==="points") await sb.rpc("admin_add_points",{p_user:b.dataset.u,p_pack:b.dataset.p});
     if (b.dataset.act==="free") await sb.rpc("admin_set_plan",{p_user:b.dataset.u,p_plan:"free",p_days:0});
     if (b.dataset.act==="reject") await sb.from("payment_requests").update({status:"rejected"}).eq("id",b.dataset.r);
     await loadAccount(); showAdmin();

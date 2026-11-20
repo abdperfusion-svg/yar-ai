@@ -218,7 +218,7 @@ async function afterReply(admin: any, userId: string, convId: string, category: 
     } catch { /* */ }
     const del = mems.filter((m) => (remove as string[]).includes(m.fact)).map((m) => m.id);
     if (del.length) await admin.from("memories").delete().in("id", del);
-    const rows = (add as string[]).filter((f) => typeof f === "string" && f.trim().length > 3).slice(0, 5)
+    const rows = (add as string[]).filter((f) => typeof f === "string" && f.trim().length > 3).slice(0, 10)
       .map((f) => ({ user_id: userId, fact: f.trim().slice(0, 300), category }));
     if (rows.length) await admin.from("memories").insert(rows);
     const { data: all } = await admin.from("memories").select("id").eq("user_id", userId).order("created_at", { ascending: false });
@@ -306,7 +306,16 @@ Deno.serve(async (req) => {
 
     // اختيار النموذج: سريع / برو / خبير (الخبير للمشتركين بس)
     const paid = (plan?.id ?? "free") !== "free";
-    const md = mode === "fast" ? "fast" : (mode === "expert" && paid ? "expert" : "pro");
+    // الخبير: مجاني للمشتركين، والباقين يدفعون 3 نقاط من رصيدهم
+    let md = mode === "fast" ? "fast" : "pro", expertPaidPoints = false, pointsLeft: number | null = null, pointsNote = "";
+    if (mode === "expert") {
+      if (paid) md = "expert";
+      else {
+        const { data: left } = await admin.rpc("spend_points", { p_user: user.id, p_cost: 3, p_reason: "سؤال خبير" });
+        if (typeof left === "number" && left >= 0) { md = "expert"; expertPaidPoints = true; pointsLeft = left; }
+        else pointsNote = "\n\n_نقاطك ما تكفي لوضع الخبير (3 نقاط)، فجاوبتك بالوضع العادي. تكدر تشحن نقاط من «الباقات والنقاط»._";
+      }
+    }
     const deep = !!think;
     const gModels = md === "fast" ? ["gemini-3.5-flash-lite", ...MODELS]
       : deep ? [...(Deno.env.get("GEMINI_DEEP_MODELS") ?? "gemini-pro-latest,gemini-3.8-flash").split(","), ...MODELS] : MODELS;
@@ -324,6 +333,8 @@ Deno.serve(async (req) => {
         for (const m of expertModels) {
           try { const t = await openrouter(m.trim(), sys, contents); onText?.(t); return t; } catch (e) { console.error("expert", m, String(e)); }
         }
+        // ما اشتغل أي نموذج خبير: نرجّع النقاط
+        if (expertPaidPoints) { await admin.rpc("refund_points", { p_user: user.id, p_amount: 3, p_reason: "إرجاع: الخبير ما اشتغل" }).then(() => {}, () => {}); expertPaidPoints = false; }
       }
       if (onText) return await geminiStream(sys, contents, useSearch, gModels, onText);
       let draft = await gemini(sys, contents, false, useSearch, gModels);
@@ -334,7 +345,7 @@ Deno.serve(async (req) => {
     };
 
     const finish = async (body: string) => {
-      let final = body;
+      let final = body + pointsNote;
       if (LAST_SOURCES.length) final += `\n\n**المصادر:**\n${LAST_SOURCES.map((x) => `- [${x.title}](${x.uri})`).join("\n")}`;
       const shown = att.length ? `📎 ${att.map((f: { name?: string }) => f.name || "ملف").join("، ")}\n${text}` : text;
       await admin.from("messages").insert([
@@ -346,7 +357,7 @@ Deno.serve(async (req) => {
       if (text) EdgeRuntime.waitUntil(afterReply(admin, user.id, convId, cat, text, mems ?? []));
       return final;
     };
-    const meta = { conversation_id: convId, category: cat, remaining: limit - (used ?? 0), plan: plan?.id, mode: md };
+    const meta = { conversation_id: convId, category: cat, remaining: limit - (used ?? 0), plan: plan?.id, mode: md, points: pointsLeft };
 
     if (stream) {
       const enc = new TextEncoder();
