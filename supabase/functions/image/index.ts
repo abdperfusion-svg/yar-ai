@@ -10,8 +10,10 @@ const T = (ms: number) => AbortSignal.timeout(ms);
 const PROMPTER = `You turn a user's image request (often Iraqi Arabic or Kurdish) into one excellent English prompt for an AI image model.
 Rules: describe subject, setting, composition, lighting, style, camera/lens if photographic, colours, mood. Photorealistic unless the user asks for another style.
 People: Iraqi or Kurdish looking, local styling. Iraqi men wear Iraqi dress (shemagh wrapped as jarawiya, striped zboun with sitra jacket, or modern clothes) never Gulf agal or white Gulf dishdasha. Kurdish context means Kurdish clothing.
-If the user wants text in the image, put the exact text in quotes. No nudity, no real public figures, no brand logos.
-Return JSON only: {"prompt":"...","aspect":"1:1|4:5|9:16|16:9","caption":"one short Iraqi-Arabic sentence describing exactly what was drawn"}`;
+TEXT RULE (very important): image models cannot write Arabic or Kurdish correctly, so the image must contain NO text at all: no letters, words, numbers, signs, labels or watermarks. If the user wants any words (a logo name, a title, a slogan, a price, a phone), copy those exact words (in the user's language and spelling) into "text", and design the picture with clean empty space for them: for a logo use a simple centered emblem/icon on a plain background with nothing written; for posters keep a calm empty area at the top or bottom. Always end the prompt with: "no text, no letters, no typography, no watermark".
+"pos" says where the words go: "logo" (written under the emblem), "bottom" or "top". If the user wants no words, "text" is "".
+No nudity, no real public figures, no brand logos.
+Return JSON only: {"prompt":"...","aspect":"1:1|4:5|9:16|16:9","caption":"one short Iraqi-Arabic sentence describing exactly what was drawn","text":"","pos":"bottom"}`;
 
 async function gemText(system: string, text: string) {
   // ١) Cloudflare (رصيد مجاني منفصل عن Google وسريع)
@@ -167,7 +169,22 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "سجّل دخول أول" }, 401);
 
-    const { conversation_id, message, category, ref } = await req.json();
+    const body = await req.json();
+    // الكتابة العربية تنضاف بالتطبيق فوگ الصورة، وهنا نحفظ النسخة النهائية مكان القديمة
+    if (body.action === "overlay") {
+      const { conversation_id: cid, old_url, png } = body;
+      if (!cid || !old_url || typeof png !== "string" || png.length > 12_000_000) return json({ error: "bad" }, 400);
+      const { data: conv } = await admin.from("conversations").select("id").eq("id", cid).eq("user_id", user.id).maybeSingle();
+      if (!conv) return json({ error: "المحادثة مو موجودة" }, 404);
+      const path2 = `${user.id}/${crypto.randomUUID()}.png`;
+      const up2 = await admin.storage.from("images").upload(path2, b64(png), { contentType: "image/png" });
+      if (up2.error) return json({ error: "ما انحفظت" }, 500);
+      const url2 = admin.storage.from("images").getPublicUrl(path2).data.publicUrl;
+      const { data: msgs } = await admin.from("messages").select("id,content").eq("conversation_id", cid).eq("user_id", user.id).eq("role", "assistant").like("content", `%${old_url}%`);
+      for (const m of msgs ?? []) await admin.from("messages").update({ content: m.content.replace(old_url, url2) }).eq("id", m.id);
+      return json({ image: url2 });
+    }
+    const { conversation_id, message, category, ref } = body;
     const hasRef = ref && typeof ref.data === "string" && ref.data.length < 8_000_000;
     const text = String(message ?? "").trim().slice(0, 2000);
     if (!text) return json({ error: "اكتب وصف الصورة" }, 400);
@@ -184,11 +201,13 @@ Deno.serve(async (req) => {
       pointPaid = true; pointsLeft = left;
     }
 
-    let spec = { prompt: text, aspect: "1:1", caption: "هاي الصورة اللي طلبتها" };
+    let spec = { prompt: text, aspect: "1:1", caption: "هاي الصورة اللي طلبتها", text: "", pos: "bottom" };
     const tp = Date.now();
     try { spec = { ...spec, ...JSON.parse(await gemText(PROMPTER, hasRef ? `The user uploaded a photo and wants it transformed: "${text}". Write the prompt for the final edited image (same subject and composition, new style).` : text)) }; } catch { /* raw text */ }
     console.log("prompt-time", Date.now() - tp, "ms");
     if (!SIZES[spec.aspect]) spec.aspect = "1:1";
+    const overlayText = hasRef ? "" : String(spec.text ?? "").trim().slice(0, 80);
+    if (overlayText && !/no text/i.test(spec.prompt)) spec.prompt += ". no text, no letters, no typography, no watermark";
 
     // صور Google المدفوعة بس إذا فعّلنا الدفع (GEMINI_IMAGES=1)، غير هيج نروح للمجاني مباشرة بدون انتظار
     const t0 = Date.now();
@@ -226,7 +245,7 @@ Deno.serve(async (req) => {
       { conversation_id: convId, user_id: user.id, role: "assistant", content: reply },
     ]);
     await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
-    return json({ conversation_id: convId, reply, image: imageUrl, remaining_images: pointPaid ? 0 : limit - (used ?? 0), points: pointsLeft });
+    return json({ conversation_id: convId, reply, image: imageUrl, remaining_images: pointPaid ? 0 : limit - (used ?? 0), points: pointsLeft, overlay: overlayText ? { text: overlayText, pos: ["logo", "top", "bottom"].includes(spec.pos) ? spec.pos : "bottom" } : null });
   } catch (e) {
     console.error(String(e));
     return json({ error: "صار خلل بتوليد الصورة، جرّب مرة ثانية" }, 500);

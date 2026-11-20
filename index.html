@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="YAR AI">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Cairo:wght@700;900&display=swap" rel="stylesheet">
 <style>
 /* VOICE: هادئ وواثق مثل تطبيقات الذكاء الكبيرة
    IDEA: لوحة كتابة واحدة بالنص، كل شي ثاني يختفي
@@ -777,7 +777,20 @@ async function send(){
     if (imgMode) {
       const { data, error } = await sb.functions.invoke("image", { body: { conversation_id: convId, message: text, category: curCat, ref } });
       if (error) { try { const j = await error.context.json(); showErr(j.error, !!j.upgrade); } catch { showErr("صار خلل بالاتصال، جرّب مرة ثانية"); } }
-      else done(data);
+      else {
+        done(data);
+        if (data?.overlay?.text && data.image) {
+          const im = body.querySelector("img");
+          if (im) im.style.opacity = ".5";
+          pending.querySelector(".body").insertAdjacentHTML("beforeend", `<div class="sub" id="ovl">✍️ يار يكتب الكلام على الصورة…</div>`);
+          try {
+            const png = await addArabicText(data.image, data.overlay.text, data.overlay.pos);
+            const r = await sb.functions.invoke("image", { body: { action: "overlay", conversation_id: data.conversation_id, old_url: data.image, png } });
+            if (r.data?.image && im) { im.src = r.data.image; const a = im.closest("a"); if (a) a.href = r.data.image; }
+          } catch (e) { console.error("overlay", e); }
+          if (im) im.style.opacity = ""; document.getElementById("ovl")?.remove();
+        }
+      }
       return;
     }
     const sh = pending.querySelector(".shimmer");
@@ -912,6 +925,44 @@ function planCard(pl, sel){
     <div style="font-weight:800">${pl.name} ${pl.id===ME.plan?'<span class="badge">باقتك</span>':''}</div>
     <div class="p">${pl.price_iqd ? pl.price_iqd.toLocaleString("ar-IQ") : "٠"} <small>${pl.price_iqd?'دينار / شهر':'مجاناً'}</small></div>
     <ul>${planFeatures(pl).map(f=>`<li>• ${f}</li>`).join("")}</ul></div>`;
+}
+// الذكاء الاصطناعي ما يعرف يكتب عربي، فيار يكتب الكلام بخط القاهرة فوگ الصورة
+async function addArabicText(url, text, pos){
+  try { await document.fonts.load('900 80px Cairo'); } catch {}
+  const img = await new Promise((ok, no) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => ok(i); i.onerror = no; i.src = url + (url.includes("?") ? "&" : "?") + "cors=1"; });
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const logo = pos === "logo";
+  const extra = logo ? Math.round(H * 0.24) : 0;
+  const c = document.createElement("canvas"); c.width = W; c.height = H + extra;
+  const x = c.getContext("2d");
+  if (logo) {
+    // لون الخلفية من زاوية الصورة حتى يبين كأنه جزء منها
+    x.drawImage(img, 0, 0, 1, 1, 0, 0, 1, 1);
+    const [r, g, b] = x.getImageData(0, 0, 1, 1).data;
+    x.fillStyle = `rgb(${r},${g},${b})`; x.fillRect(0, 0, W, H + extra);
+    x.drawImage(img, 0, 0);
+    const light = (r * 299 + g * 587 + b * 114) / 1000 > 140;
+    x.fillStyle = light ? "#14213d" : "#ffffff";
+    fitText(x, text, W * 0.86, extra * 0.62);
+    x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
+    x.fillText(text, W / 2, H + extra * 0.45);
+  } else {
+    x.drawImage(img, 0, 0);
+    const size = fitText(x, text, W * 0.82, H * 0.09);
+    const tw = Math.min(W * 0.9, x.measureText(text).width + size * 1.4), th = size * 1.75;
+    const cy = pos === "top" ? H * 0.1 : H * 0.88;
+    x.fillStyle = "rgba(10,12,20,.72)";
+    const rx = (W - tw) / 2, ry = cy - th / 2, rad = th / 2;
+    x.beginPath(); x.roundRect ? x.roundRect(rx, ry, tw, th, rad) : x.rect(rx, ry, tw, th); x.fill();
+    x.fillStyle = "#ffffff"; x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
+    x.fillText(text, W / 2, cy + size * 0.06);
+  }
+  return c.toDataURL("image/png").split(",")[1];
+}
+function fitText(x, text, maxW, maxH){
+  let size = Math.round(maxH);
+  do { x.font = `900 ${size}px Cairo, sans-serif`; if (x.measureText(text).width <= maxW) break; size -= 2; } while (size > 14);
+  return size;
 }
 function showPoints(n){
   if (typeof n !== "number") return;
