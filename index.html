@@ -260,6 +260,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
           <button type="button" class="catchip" id="modeBtn" style="margin-inline-start:6px"><span id="modeLabel">✦ برو</span> <span style="font-size:10px">▾</span>
             <div class="catmenu" id="modeMenu"></div></button>
           <button type="button" class="catchip" id="thinkBtn" title="فكّر بعمق" style="margin-inline-start:6px">🧠<span class="hide-sm"> فكّر بعمق</span></button>
+          <button type="button" class="catchip" id="resBtn" title="بحث عميق بمصادر علمية حقيقية" style="margin-inline-start:6px">🔎<span class="hide-sm"> بحث عميق</span></button>
           <button type="button" class="catchip" id="attBtn" title="أرفق ملف أو صورة" style="margin-inline-start:6px">📎</button>
           <button type="button" class="catchip" id="imgBtn" style="margin-inline-end:auto;margin-inline-start:6px">🎨 صورة</button>
           <button class="send" id="sendBtn" type="submit" aria-label="إرسال">↑</button>
@@ -393,6 +394,7 @@ $("menuBtn").onclick = () => { $("side").classList.add("open"); $("scrim").class
 $("scrim").onclick = closeSide;
 $("imgBtn").onclick = () => {
   imgMode = !imgMode; $("imgBtn").classList.toggle("on", imgMode);
+  if (imgMode && RESEARCH) { RESEARCH = false; $("resBtn").classList.remove("on"); }
   $("input").placeholder = imgMode ? "اوصف الصورة اللي تريدها… مثلاً: بوستر لصيدلية بألوان خضراء ويا بنت كردية" : "اسأل يار أي شي…";
   $("input").focus();
 };
@@ -407,6 +409,13 @@ function setMode(){
 setMode();
 $("modeBtn").onclick = e => { e.stopPropagation(); $("modeMenu").classList.toggle("open"); $("catMenu").classList.remove("open"); };
 $("thinkBtn").onclick = () => { THINK = !THINK; $("thinkBtn").classList.toggle("on", THINK); };
+let RESEARCH = false;
+$("resBtn").onclick = () => {
+  RESEARCH = !RESEARCH; $("resBtn").classList.toggle("on", RESEARCH);
+  if (RESEARCH && imgMode) $("imgBtn").click();
+  $("input").placeholder = RESEARCH ? "اكتب موضوع البحث أو السمينار… مثلاً: دور التمريض في الوقاية من التهابات القسطرة" : "اسأل يار أي شي…";
+  $("input").focus();
+};
 document.addEventListener("click", () => $("modeMenu").classList.remove("open"));
 $("catBtn").onclick = e => { e.stopPropagation(); $("catMenu").classList.toggle("open"); };
 $("meBtn").onclick = e => { e.stopPropagation(); $("meMenu").classList.toggle("open"); };
@@ -461,9 +470,10 @@ async function send(){
       else done(data);
       return;
     }
-    if (THINK) pending.querySelector(".shimmer").textContent = "يار يفكر بعمق…";
+    const sh = pending.querySelector(".shimmer");
+    if (RESEARCH) sh.textContent = "🔎 يبدي البحث العميق… (ياخذ دقيقة تقريباً)"; else if (THINK) sh.textContent = "يار يفكر بعمق…";
     const { data: { session } } = await sb.auth.getSession();
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/chat`, { method: "POST",
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/${RESEARCH ? "research" : "chat"}`, { method: "POST",
       headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${session?.access_token}` },
       body: JSON.stringify({ conversation_id: convId, message: text, category: curCat, files, mode: MODE, think: THINK, stream: true }) });
     if (!res.ok || !(res.headers.get("content-type") || "").includes("event-stream")) {
@@ -482,6 +492,7 @@ async function send(){
         if (!line.startsWith("data:")) continue;
         const ev = JSON.parse(line.slice(5));
         if (ev.conversation_id && !ev.done && !convId) { convId = ev.conversation_id; saveConv(); }
+        if (ev.status && !acc) { const x = body.querySelector(".shimmer"); if (x) x.textContent = ev.status; }
         if (ev.t) { if (!acc) body.classList.add("cursor"); acc += ev.t; if (!raf) raf = requestAnimationFrame(paint); }
         if (ev.error) { body.classList.remove("cursor"); showErr(ev.error); finished = true; }
         if (ev.done) { if (raf) cancelAnimationFrame(raf); done(ev); finished = true; loadConvs(); }
