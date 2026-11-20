@@ -76,14 +76,21 @@ async function editImage(ref: { mime: string; data: string }, instruction: strin
   const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
   if (cfAcc && cfTok) {
     const t = Date.now();
-    try {
-      const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img`, {
-        method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: T(60000),
-        body: JSON.stringify({ prompt: prompt.slice(0, 900), image: Array.from(b64(ref.data)), strength: 0.6, num_steps: 20, guidance: 7.5 }) });
-      console.log("edit-cloudflare", r.status, Date.now() - t);
-      const img = await asImage(r); if (img) return img;
-      if (!r.ok) console.error("edit-cloudflare", (await r.text()).slice(0, 300));
-    } catch (e) { console.error("edit-cloudflare", String(e)); }
+    for (const model of ["@cf/black-forest-labs/flux-2-klein-4b", "@cf/black-forest-labs/flux-2-klein-9b", "@cf/black-forest-labs/flux-2-dev"]) {
+      try {
+        const form = new FormData();
+        form.append("prompt", `Restyle image 0: ${instruction}. Keep the same subject, face, pose and composition. ${prompt}`.slice(0, 1500));
+        form.append("input_image_0", new Blob([b64(ref.data)], { type: ref.mime || "image/jpeg" }), "input.jpg");
+        const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/${model}`, {
+          method: "POST", headers: { Authorization: `Bearer ${cfTok}` }, signal: T(60000), body: form });
+        console.log("edit-cloudflare", model, r.status, Date.now() - t);
+        if (r.ok) {
+          const ct = r.headers.get("content-type") ?? "";
+          if (ct.startsWith("image/")) return new Uint8Array(await r.arrayBuffer());
+          const j = await r.json(); const im = j?.result?.image; if (im) return b64(im);
+        } else console.error("edit-cloudflare", model, (await r.text()).slice(0, 250));
+      } catch (e) { console.error("edit-cloudflare", model, String(e)); }
+    }
   }
   return null;
 }
@@ -105,9 +112,9 @@ async function freeImage(prompt: string, w: number, h: number): Promise<Uint8Arr
     try {
       const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/@cf/black-forest-labs/flux-1-schnell`, {
         method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: T(40000),
-        body: JSON.stringify({ prompt: p, steps: 6, seed }) });
+        body: JSON.stringify({ prompt: p, num_steps: 8, seed }) });
       if (r.ok) { const j = await r.json(); if (j?.result?.image) return b64(j.result.image); }
-      console.error("cloudflare", r.status);
+      console.error("cloudflare", r.status, (await r.text()).slice(0, 200));
     } catch (e) { console.error("cloudflare", String(e)); }
   }
 
