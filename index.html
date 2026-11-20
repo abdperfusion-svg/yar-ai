@@ -597,17 +597,33 @@ async function speak(text, btn){
   u.onend = u.onerror = () => btn.textContent = "🔊"; btn.textContent = "⏹";
   speechSynthesis.speak(u);
 }
+// المايك: نسجل الصوت ونحوله لكتابة بالخادم (يشتغل على كل الموبايلات)
 let REC = null;
-function toggleMic(){
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return alertBox("جهازك ما يدعم الكتابة بالصوت، جرّب Chrome");
+async function toggleMic(){
+  const btn = $("micBtn");
   if (REC) { REC.stop(); return; }
-  REC = new SR(); REC.lang = ({ ar:"ar-IQ", ckb:"ckb-IQ", en:"en-US" })[textLang($("input").value || [...document.querySelectorAll(".msgrow.user")].pop()?.textContent || "")]; REC.interimResults = true; REC.continuous = false;
-  const base = $("input").value ? $("input").value + " " : "";
-  REC.onresult = e => { $("input").value = base + [...e.results].map(r=>r[0].transcript).join(""); autosize(); };
-  REC.onend = () => { REC = null; $("micBtn").classList.remove("rec"); $("input").focus(); };
-  REC.onerror = () => { REC = null; $("micBtn").classList.remove("rec"); };
-  $("micBtn").classList.add("rec"); REC.start();
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return alertBox("جهازك ما يدعم التسجيل، حدّث المتصفح (كروم)");
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { return alertBox("اسمح ليار يستخدم المايك: من إعدادات المتصفح ← الأذونات ← المايكروفون"); }
+  const mime = ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg"].find(t => MediaRecorder.isTypeSupported(t)) || "";
+  const chunks = []; const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  REC = rec; btn.classList.add("rec"); $("remain").textContent = "🔴 يسجّل… احچي، وبعدها اضغط ✕ يم الزر الأحمر ·";
+  const stopTimer = setTimeout(() => rec.state === "recording" && rec.stop(), 120000); // أقصى شي دقيقتين
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  rec.onstop = async () => {
+    clearTimeout(stopTimer); stream.getTracks().forEach(t => t.stop()); REC = null; btn.classList.remove("rec"); setTimeout(refreshActive, 0);
+    const blob = new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" });
+    if (blob.size < 2000) { $("remain").textContent = ""; return alertBox("التسجيل قصير هواية، احچي شوية أكثر"); }
+    $("remain").textContent = "✍️ يار يكتب كلامك… ·";
+    const audio = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(",")[1]); fr.readAsDataURL(blob); });
+    const { data, error } = await sb.functions.invoke("stt", { body: { audio, mime: blob.type } });
+    $("remain").textContent = "";
+    if (error || !data?.text) { let m = "ما كدرت أسمع زين، جرّب مرة ثانية"; try { m = (await error.context.json()).error || m; } catch {} return alertBox(m); }
+    const inp = $("input"); inp.value = (inp.value ? inp.value + " " : "") + data.text; autosize(); inp.focus();
+    try { localStorage.setItem("yar_draft", inp.value); } catch {}
+  };
+  rec.start(); setTimeout(refreshActive, 50);
 }
 
 /* ===== رفع الملفات (PDF، صور، نص) ===== */
@@ -1115,6 +1131,7 @@ function refreshActive(){
   if (THINK) items.push(["🧠 فكّر بعمق", () => $("thinkBtn").click()]);
   if (RESEARCH) items.push(["🔎 بحث عميق", () => $("resBtn").click()]);
   if (imgMode) items.push(["🎨 صورة", () => $("imgBtn").click()]);
+  if (REC) items.unshift(["🔴 يسجّل… اضغط ✕ حتى يوكف", () => REC && REC.stop()]);
   $("activeChips").innerHTML = items.map((x,i)=>`<span>${esc(x[0])}<button type="button" data-i="${i}">✕</button></span>`).join("");
   $("activeChips").querySelectorAll("button").forEach(b => b.onclick = e => { e.stopPropagation(); items[b.dataset.i][1](); refreshActive(); });
 }
