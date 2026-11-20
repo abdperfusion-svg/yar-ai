@@ -28,11 +28,19 @@ async function gemini(system: string, contents: unknown[]) {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, ...(search ? { tools: [{ google_search: {} }] } : {}), generationConfig: { temperature: 0.6 } }),
     }).catch(() => null);
-    if (!r?.ok) continue;
+    if (!r?.ok) { if (r?.status === 429) { /* رصيد هذا النموذج خالص */ } continue; }
     const t = (await r.json())?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
     if (t.trim()) return t;
   }
-  // احتياطي مجاني
+  // احتياطي مجاني ١: Cloudflare
+  const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
+  if (cfAcc && cfTok) {
+    const msgs = [{ role: "system", content: system }, ...(contents as { role: string; parts: { text: string }[] }[]).map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: c.parts[0].text }))];
+    const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast`, { method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, body: JSON.stringify({ messages: msgs, max_tokens: 2000 }) }).catch(() => null);
+    const t = r?.ok ? (await r.json())?.result?.response ?? "" : "";
+    if (typeof t === "string" && t.trim()) return t;
+  }
+  // احتياطي مجاني ٢
   const ork = Deno.env.get("OPENROUTER_API_KEY");
   if (ork) {
     const msgs = [{ role: "system", content: system }, ...(contents as { role: string; parts: { text: string }[] }[]).map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: c.parts[0].text }))];
@@ -57,6 +65,12 @@ Deno.serve(async (req) => {
     await tg(token, "setMyDescription", { description: "يار — ذكاء اصطناعي عراقي يحچي بلهجتك ويساعدك بكل شغلك. من YAR Studio." });
     return new Response(JSON.stringify(await r.json()), { headers: { "Content-Type": "application/json" } });
   }
+  // اسم البوت (حتى البرنامج يسوي رابط الربط)
+  if (url.searchParams.get("me") === "1") {
+    const me = await (await tg(token, "getMe", {})).json();
+    return new Response(JSON.stringify({ username: me?.result?.username ?? null }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" } });
+  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" } });
   if (req.headers.get("x-telegram-bot-api-secret-token") !== secret) return new Response("forbidden", { status: 403 });
 
   const upd = await req.json().catch(() => ({}));
@@ -78,6 +92,15 @@ Deno.serve(async (req) => {
     };
     try {
       const name = msg?.from?.first_name ? ` ${msg.from.first_name}` : "";
+      // ربط حساب يار بتلكرام بكود من التطبيق
+      const lc = text.match(/^\/start\s+link_([A-F0-9]{6})$/i) ?? text.match(/^\/link\s+([A-F0-9]{6})$/i) ?? text.match(/^([A-F0-9]{6})$/);
+      if (lc) {
+        const { data: row } = await admin.from("link_codes").select("user_id,created_at").eq("code", lc[1].toUpperCase()).eq("provider", "telegram").maybeSingle();
+        if (!row || Date.now() - new Date(row.created_at).getTime() > 15 * 60_000) return await send("الكود غلط أو انتهى ⏳ اطلب كود جديد من التطبيق: حساباتي المربوطة ← تلكرام.");
+        await admin.from("user_connections").upsert({ user_id: row.user_id, provider: "telegram", account_id: String(chatId), account_label: msg?.from?.username ? "@" + msg.from.username : (msg?.from?.first_name ?? "Telegram"), updated_at: new Date().toISOString() }, { onConflict: "user_id,provider" });
+        await admin.from("link_codes").delete().eq("code", lc[1].toUpperCase());
+        return await send(`✅ انربط حسابك بيار${name}!\nهسه تگدر تحچي ويايه هنا بلا حدود، وأدزلك الصور والملفات من التطبيق لهنا.`);
+      }
       if (!text) return await send("حالياً أفهم الرسائل المكتوبة بس 🙏 للصور والملفات استخدم تطبيق يار:\n" + APP);
       if (text.startsWith("/start")) return await send(`هلا بيك${name} 👋\nأني **يار**، ذكاء اصطناعي عراقي من YAR Studio.\nاسألني أي شي: دراسة، شغل، كتابة، ترجمة، أفكار…\n\nللبحوث بمراجع حقيقية، الصور، وملفات Word و PowerPoint، استخدم التطبيق:\n${APP}`);
       if (text.startsWith("/new")) { await admin.from("tg_messages").delete().eq("chat_id", chatId); return await send("تمام، بدينا محادثة جديدة ✨"); }
@@ -85,7 +108,8 @@ Deno.serve(async (req) => {
 
       const since = new Date(); since.setUTCHours(0, 0, 0, 0);
       const { count } = await admin.from("tg_messages").select("id", { count: "exact", head: true }).eq("chat_id", chatId).eq("role", "user").gte("created_at", since.toISOString());
-      if ((count ?? 0) >= DAILY) return await send(`وصلت الحد اليومي بتيليگرام (${DAILY} رسالة) 🙏\nكمّل بتطبيق يار، وبيه باقات أكثر:\n${APP}`);
+      const { data: linked } = await admin.from("user_connections").select("user_id").eq("provider", "telegram").eq("account_id", String(chatId)).maybeSingle();
+      if (!linked && (count ?? 0) >= DAILY) return await send(`وصلت الحد اليومي بتيليگرام (${DAILY} رسالة) 🙏\nكمّل بتطبيق يار، وبيه باقات أكثر:\n${APP}`);
 
       await tg(token, "sendChatAction", { chat_id: chatId, action: "typing" });
       const { data: hist } = await admin.from("tg_messages").select("role,content").eq("chat_id", chatId).order("created_at", { ascending: false }).limit(16);
