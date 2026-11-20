@@ -140,7 +140,12 @@ main.empty #chat{flex:1;display:flex;flex-direction:column;justify-content:cente
 .plusmenu{position:absolute;bottom:calc(100% + 10px);inset-inline-start:0;width:250px;background:var(--panel2);border:1px solid var(--line);border-radius:18px;padding:6px;display:none;flex-direction:column;gap:2px;z-index:40;box-shadow:0 16px 50px rgba(0,0,0,.55)}
 .plusmenu.open{display:flex}
 .plusmenu .catchip{width:100%;justify-content:flex-start;border:0;border-radius:12px;padding:10px 12px;font-size:14.5px;color:var(--text);margin:0!important}
-.plusmenu .catchip:hover{background:var(--panel)}
+.plusmenu #updBar{position:fixed;top:calc(10px + env(safe-area-inset-top));inset-inline:12px;margin:auto;max-width:520px;z-index:200;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;background:linear-gradient(120deg,rgba(94,234,212,.16),rgba(96,165,250,.18),rgba(167,139,250,.18)),var(--panel2);border:1px solid rgba(96,165,250,.45);box-shadow:0 12px 40px rgba(0,0,0,.5);animation:ubIn .35s ease}
+@keyframes ubIn{from{transform:translateY(-20px);opacity:0}to{transform:none;opacity:1}}
+#updBar .ub-t{flex:1;display:flex;flex-direction:column;min-width:0}#updBar small{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#updBar .ub-go{background:var(--a1);color:#0b1020;border:0;border-radius:12px;padding:8px 14px;font-weight:800;flex:none}
+#updBar .ub-x{background:transparent;border:0;color:var(--muted);font-size:16px;padding:4px 6px;flex:none}
+.catchip:hover{background:var(--panel)}
 .plusmenu .catchip.on{background:linear-gradient(120deg,rgba(96,165,250,.20),rgba(167,139,250,.20))}
 .plusmenu .catchip.on::after{content:"✓";margin-inline-start:auto;color:var(--a3)}
 .pm-sub{margin-inline-start:auto;color:var(--muted);font-size:12px}
@@ -947,10 +952,21 @@ async function checkUpdate(){
   if (BUILD.startsWith("__")) return;
   try {
     const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
-    const { v } = await r.json();
-    if (v && v !== BUILD && !busy && !$("input").value.trim()) location.replace(location.pathname + "?v=" + v);
+    const { v, msg } = await r.json();
+    if (!v || v === BUILD || $("updBar")) return;
+    // نبيّن للمستخدم إنه اكو تحديث، وهو يختار وكت يحدّث
+    const bar = document.createElement("div"); bar.id = "updBar";
+    bar.innerHTML = `<div class="ub-t"><b>✨ اكو تحديث جديد ليار</b>${msg ? `<small>${esc(msg)}</small>` : ""}</div><button class="ub-go">حدّث هسه</button><button class="ub-x" aria-label="بعدين">✕</button>`;
+    document.body.appendChild(bar);
+    bar.querySelector(".ub-go").onclick = () => { try { localStorage.setItem("yar_upd_msg", msg || ""); } catch {} location.replace(location.pathname + "?v=" + v); };
+    bar.querySelector(".ub-x").onclick = () => bar.remove();
   } catch {}
 }
+// بعد التحديث: نبيّن شنو الجديد مرة وحدة
+try { const m = localStorage.getItem("yar_upd_msg"); if (m !== null && !BUILD.startsWith("__")) { localStorage.removeItem("yar_upd_msg"); setTimeout(() => {
+  const t = document.createElement("div"); t.id = "updBar"; t.className = "done";
+  t.innerHTML = `<div class="ub-t"><b>✅ يار تحدّث</b>${m ? `<small>${esc(m)}</small>` : ""}</div><button class="ub-x" aria-label="سكّر">✕</button>`;
+  document.body.appendChild(t); t.querySelector(".ub-x").onclick = () => t.remove(); setTimeout(() => t.remove(), 7000); }, 900); } } catch {}
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
 setInterval(checkUpdate, 5 * 60 * 1000);
 checkUpdate();

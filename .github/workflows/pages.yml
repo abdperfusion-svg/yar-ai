@@ -20,9 +20,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: رقم النسخة للتحديث التلقائي
         run: |
-          V=${GITHUB_SHA::8}
+          export V=${GITHUB_SHA::8}
           sed -i "s/__BUILD__/$V/" index.html
-          echo "{\"v\":\"$V\"}" > version.json
+          MSG="$(git log -1 --pretty=%s)" python3 -c "import json,os;json.dump({'v':os.environ['V'],'msg':os.environ['MSG'][:160]},open('version.json','w'),ensure_ascii=False)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: . }
