@@ -253,6 +253,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { marked } from "https://esm.sh/marked@12.0.2";
 import DOMPurify from "https://esm.sh/dompurify@3.1.6";
 marked.setOptions({ breaks: true, gfm: true });
+const BUILD = "__BUILD__";
 const SUPABASE_URL = "https://wnjhsgjctevpaftvlcyr.supabase.co";
 const SUPABASE_KEY = "sb_publishable_qKc7vKrYAyUe0trChcVZuA_p-bBSubV";
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -339,8 +340,9 @@ async function loadConvs(){
     $("convs").appendChild(el);
   });
 }
+const saveConv = () => { try { convId ? localStorage.setItem("yar_conv", JSON.stringify({ id: convId, cat: curCat })) : localStorage.removeItem("yar_conv"); } catch {} };
 async function openConv(id, cat){
-  convId = id; curCat = cat || "general"; setCatLabel(); closeSide();
+  convId = id; saveConv(); curCat = cat || "general"; setCatLabel(); closeSide();
   const { data } = await sb.from("messages").select("role,content").eq("conversation_id", id).order("created_at");
   $("chat").innerHTML = "";
   (data||[]).forEach(m=>bubble(m.role, m.content));
@@ -365,7 +367,7 @@ async function send(){
     }
     else {
       body.innerHTML = fmt(reply); addCopy(pending, reply);
-      const isNew = !convId; convId = data.conversation_id;
+      const isNew = !convId; convId = data.conversation_id; saveConv();
       if (typeof data.remaining === "number") $("remain").textContent = `باقي اليوم ${data.remaining} رسالة ·`;
       if (isNew) loadConvs();
     }
@@ -376,7 +378,7 @@ function autosize(){ const t=$("input"); t.style.height="auto"; t.style.height=M
 $("input").addEventListener("input", autosize);
 $("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && window.innerWidth > 760) { e.preventDefault(); send(); } });
 $("composer").onsubmit = e => { e.preventDefault(); send(); };
-const newChat = () => { convId = null; setCatLabel(); welcome(); loadConvs(); closeSide(); $("input").focus(); };
+const newChat = () => { convId = null; saveConv(); setCatLabel(); welcome(); loadConvs(); closeSide(); $("input").focus(); };
 $("newChat").onclick = newChat; $("newChat2").onclick = newChat;
 $("toggleAuth").onclick = () => {
   signup = !signup;
@@ -435,7 +437,7 @@ async function loadAccount(){
   ]);
   PLANS = p.data || []; SETTINGS = Object.fromEntries((s.data||[]).map(r=>[r.key,r.value]));
   ME = me.data || { plan:"free" }; IS_ADMIN = !!adm.data; PROF = me.data || {};
-  if (PROF.category && !convId) { curCat = PROF.category; setCatLabel(); welcome(); }
+  if (PROF.category && !convId && !localStorage.getItem("yar_conv")) { curCat = PROF.category; setCatLabel(); welcome(); }
   if (me.data && !PROF.onboarded) { const go = () => CATS.length ? showProfile(true) : setTimeout(go, 200); go(); }
   const active = ME.plan !== "free" && ME.plan_until && new Date(ME.plan_until) > new Date();
   if (!active) ME.plan = "free";
@@ -578,6 +580,20 @@ async function showAdmin(){
 }
 $("adminBtn").onclick = () => { adminTab = "requests"; showAdmin(); };
 
+
+/* ===== تحديث تلقائي: إذا انرفعت نسخة جديدة، البرنامج يحدّث نفسه ===== */
+async function checkUpdate(){
+  if (BUILD.startsWith("__")) return;
+  try {
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    const { v } = await r.json();
+    if (v && v !== BUILD && !busy && !$("input").value.trim()) location.replace(location.pathname + "?v=" + v);
+  } catch {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+setInterval(checkUpdate, 5 * 60 * 1000);
+checkUpdate();
+
 let wasIn = null;
 function render(session){
   const inApp = !!session;
@@ -588,7 +604,11 @@ function render(session){
   if (!inApp) { $("adminBtn").style.display = "none"; $("expiryBar").style.display = "none"; }
   if (inApp) {
     convId = null; curCat = "general";
-    sb.from("categories").select("*").order("sort").then(({data}) => { CATS = data || []; setCatLabel(); welcome(); loadConvs(); });
+    let last = null; try { last = JSON.parse(localStorage.getItem("yar_conv") || "null"); } catch {}
+    sb.from("categories").select("*").order("sort").then(({data}) => {
+      CATS = data || [];
+      if (last?.id) openConv(last.id, last.cat); else { setCatLabel(); welcome(); loadConvs(); }
+    });
     welcome(); loadAccount();
   }
 }
