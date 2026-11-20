@@ -285,8 +285,10 @@ Deno.serve(async (req) => {
     if (stream) {
       const enc = new TextEncoder();
       const body = new ReadableStream({
-        async start(ctrl) {
-          const send = (o: unknown) => ctrl.enqueue(enc.encode(`data: ${JSON.stringify(o)}\n\n`));
+        start(ctrl) {
+          const job = (async () => {
+          let gone = false; // المستخدم طلع من البرنامج: نكمل الجواب ونحفظه حتى يلگاه من يرجع
+          const send = (o: unknown) => { if (gone) return; try { ctrl.enqueue(enc.encode(`data: ${JSON.stringify(o)}\n\n`)); } catch { gone = true; } };
           send({ conversation_id: convId });
           try {
             const full = await generate((t) => send({ t }));
@@ -296,8 +298,11 @@ Deno.serve(async (req) => {
             console.error(String(e));
             send({ error: String((e as Error).message) === "NO_KEY" ? "مفتاح الذكاء الاصطناعي بعده ما انضاف" : "صار خلل مؤقت، جرّب مرة ثانية" });
           }
-          ctrl.close();
+          try { ctrl.close(); } catch { /* */ }
+          })();
+          EdgeRuntime.waitUntil(job); // يبقى شغّال حتى لو المستخدم طلع
         },
+        cancel() { /* المستخدم سكّر الاتصال، التوليد يكمل */ },
       });
       return new Response(body, { headers: { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
     }
