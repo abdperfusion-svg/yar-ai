@@ -664,7 +664,7 @@ try { const a = JSON.parse(sessionStorage.getItem("yar_att") || "[]"); if (Array
 function alertBox(m){ $("remain").textContent = "⚠️ " + m + " ·"; }
 
 /* ===== الدخول بـ Google + حماية Turnstile ===== */
-const TURNSTILE_SITEKEY = "";   // يتعبّى بعد ما تسوي حساب Cloudflare Turnstile
+const TURNSTILE_SITEKEY = "0x4AAAAAAGKv9q_4c_JLvxa4";   // حماية Cloudflare Turnstile (المفتاح العام)
 let captchaToken = null;
 if (TURNSTILE_SITEKEY) {
   window.onTurnstile = () => window.turnstile.render("#captcha", { sitekey: TURNSTILE_SITEKEY, theme: "dark", callback: t => captchaToken = t });
@@ -827,8 +827,10 @@ $("authBtn").onclick = async () => {
   const email = $("email").value.trim(), password = $("pass").value;
   if (!email || password.length < 6) { $("authMsg").textContent = "اكتب إيميل صحيح وكلمة سر ٦ أحرف أو أكثر"; return; }
   $("authBtn").disabled = true; $("authMsg").textContent = "لحظة…";
+  const resetCap = () => { captchaToken = null; try { window.turnstile?.reset(); } catch {} };
   const r = signup ? await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname, captchaToken } }) : await sb.auth.signInWithPassword({ email, password, options: { captchaToken } });
-  $("authBtn").disabled = false;
+  $("authBtn").disabled = false; resetCap();
+  if (r.error && /captcha/i.test(r.error.message)) { $("authMsg").textContent = "انتظر شوية لحد ما يطلع ✅ بمربع التحقق، وبعدين اضغط مرة ثانية"; return; }
   if (r.error) { $("authMsg").textContent = /Invalid login/i.test(r.error.message) ? "الإيميل أو كلمة السر غلط" : r.error.message; return; }
   if (signup && !r.data.session) $("authMsg").textContent = "✅ دزّينالك رسالة تأكيد على الإيميل، افتحها وبعدين سجّل دخول";
   if (/already registered/i.test(r.error?.message||"")) $("authMsg").textContent = "هذا الإيميل عنده حساب، سجّل دخول";
@@ -839,6 +841,7 @@ $("forgotBtn").onclick = async () => {
   if (!email.includes("@")) { $("authMsg").textContent = "اكتب إيميلك فوگ أول، وبعدين اضغط «نسيت كلمة السر؟»"; return; }
   $("authMsg").textContent = "لحظة…";
   const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname, captchaToken });
+  captchaToken = null; try { window.turnstile?.reset(); } catch {}
   $("authMsg").textContent = error ? "ما انرسل، جرّب بعد شوية" : "✅ دزّينالك رابط على إيميلك. افتحه وتطلعلك خانة كلمة سر جديدة (إذا ما لگيته شوف السبام).";
 };
 function showNewPassword(){
