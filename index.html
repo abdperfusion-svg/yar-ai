@@ -324,7 +324,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
               <button type="button" class="catchip" id="buildBtn">🛠️ ابنِ موقع أو برنامج</button>
               <button type="button" class="catchip" id="micBtn">🎤 احچي بدل الكتابة</button>
               <button type="button" class="catchip" id="callBtn">📞 مكالمة ويا يار</button>
-              <button type="button" class="catchip" id="libBtn">📚 مكتبتي</button>
+              <button type="button" class="catchip" id="libBtn">📚 مكتبتي</button><button type="button" class="catchip" id="clsBtn">👥 صفوفي</button>
               <button type="button" class="catchip" id="iqBtn">🇮🇶 دليل العراق</button><button type="button" class="catchip" id="examBtn">📝 امتحني</button><button type="button" class="catchip" id="semBtn">🎤 سيمينار</button><button type="button" class="catchip" id="ftBtn">📁 أدوات الملفات</button>
               <div class="pm-sep"></div>
               <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span class="pm-sub">الفئة ▾</span>
@@ -1082,11 +1082,11 @@ function skim(text, max = 57000){
   const n = 12, size = Math.floor(max / n), step = (text.length - size) / (n - 1);
   return Array.from({ length: n }, (_, i) => `【جزء ${i + 1} من ${n} — تقريباً عند ${Math.round(i * 100 / (n - 1))}٪ من الملف】\n` + text.slice(Math.round(i * step), Math.round(i * step) + size)).join("\n\n…\n\n");
 }
-async function saveToLibrary(name, text, onProg){
+async function saveToLibrary(name, text, onProg, classId){
   const L = await fileLimits(), parts = chunkText(text, Math.max(600, Math.floor(L.chunks / 3)));
   if (!parts.length) return { ok: false, msg: "ما بيه كتابة" };
-  const { data: d, error } = await sb.from("user_docs").insert({ name: name.slice(0, 120), chars: text.length }).select("id").single();
-  if (error) return { ok: false, msg: /حد/.test(error.message) ? error.message : "ما انحفظ، جرّب مرة ثانية" };
+  const { data: d, error } = await sb.from("user_docs").insert({ name: name.slice(0, 120), chars: text.length, ...(classId ? { class_id: classId } : {}) }).select("id").single();
+  if (error) return { ok: false, msg: /حد|عضو/.test(error.message) ? error.message : "ما انحفظ، جرّب مرة ثانية" };
   for (let i = 0; i < parts.length; i += 50) {
     onProg?.(Math.round(i * 100 / parts.length));
     const { error: e2 } = await sb.from("doc_chunks").insert(parts.slice(i, i + 50).map((c, j) => ({ doc_id: d.id, idx: i + j, content: c })));
@@ -1135,6 +1135,89 @@ function chunkText(t, max = 600){
   while (i < clean.length && out.length < max) { let end = Math.min(clean.length, i + 1200); const cut = clean.lastIndexOf("\n", end); if (cut > i + 600) end = cut; out.push(clean.slice(i, end).trim()); i = end - 120 > i ? end - 120 : end; }
   return out.filter(x => x.length > 30);
 }
+/* ===== صفوفي: صف دراسي مشترك، الممثل يسويه ويطلع رمز، والطلاب يدخلون بحساباتهم ===== */
+async function showClasses(msg){
+  const { data: { user } } = await sb.auth.getUser();
+  const { data: cls } = await sb.from("classes").select("id,name,code,owner").order("created_at", { ascending: false });
+  openModal(`<h3>👥 صفوفي</h3><div class="sub">صف دراسي مشترك: الممثل يسوي الصف ويدز الرمز لزملائه، وكل واحد يدخل بحسابه. المحاضرات تبقى بالصف للكل، ويار يجاوب ويامتحن كل واحد منها.</div>
+    <div class="msg" id="clsMsg">${msg || ""}</div>
+    ${(cls || []).map(c => `<div class="row" data-open="${c.id}" style="cursor:pointer"><div class="t"><span class="em">🎓 ${esc(c.name)}</span><span class="badge">${c.owner === user?.id ? "ممثل الصف" : "عضو"}</span></div><div style="color:var(--muted)">اضغط حتى تفتح الصف</div></div>`).join("") || '<div class="sub">لهسه ما عندك صفوف.</div>'}
+    <h4 style="margin:14px 0 6px">➕ ادخل صف بالرمز</h4><div style="display:flex;gap:8px"><input id="clsCode" placeholder="مثلاً AB12CD" style="text-transform:uppercase"><button class="primary" id="clsJoin" style="width:auto;padding:8px 16px">ادخل</button></div>
+    <h4 style="margin:14px 0 6px">🆕 سوّي صف جديد (للممثل)</h4><div style="display:flex;gap:8px"><input id="clsName" placeholder="مثلاً: تمريض المرحلة الثالثة - كركوك"><button class="primary" id="clsNew" style="width:auto;padding:8px 16px">سوّي</button></div>
+    <div class="sub">⭐ <b>باقة الصف</b>: ٢٥ ألف شهرياً لـ ٦ طلاب، كل واحد بحسابه ياخذ مميزات باقة الطلاب (يطلع على الواحد حدود ٤٢٠٠ دينار). يشترك بيها ممثل الصف. <button class="no" id="clsPlan" style="width:auto;padding:4px 10px">شوف الباقات</button></div>`);
+  $("modalBody").querySelectorAll("[data-open]").forEach(r => r.onclick = () => openClass(r.dataset.open));
+  $("clsPlan").onclick = () => showPlans("class");
+  $("clsJoin").onclick = async () => { const code = $("clsCode").value.trim(); if (!code) return; const { data, error } = await sb.rpc("join_class", { p_code: code }); if (error) return $("clsMsg").textContent = "⚠️ " + (error.message.includes("غلط") ? "الرمز غلط" : error.message); openClass(data.id, `✅ دخلت صف «${data.name}»`); };
+  $("clsNew").onclick = async () => { const n = $("clsName").value.trim(); if (n.length < 2) return; const { data, error } = await sb.rpc("create_class", { p_name: n }); if (error) return $("clsMsg").textContent = "⚠️ " + error.message; openClass(data.id, "✅ انسوى الصف. دز الرمز لزملائك"); };
+}
+async function openClass(id, msg){
+  const { data: { user } } = await sb.auth.getUser();
+  const [{ data: c }, { data: roster }, { data: docs }] = await Promise.all([
+    sb.from("classes").select("id,name,code,owner").eq("id", id).single(),
+    sb.rpc("class_roster", { p_class: id }),
+    sb.from("user_docs").select("id,name,chars,user_id,created_at").eq("class_id", id).order("created_at", { ascending: false }) ]);
+  if (!c) return showClasses("⚠️ الصف مو موجود");
+  const owner = c.owner === user?.id, link = location.origin + location.pathname + "?join=" + c.code;
+  const invite = `انضم لصفنا «${c.name}» على يار 🎓\nالرمز: ${c.code}\n${link}`;
+  openModal(`<h3>🎓 ${esc(c.name)}</h3><div class="msg" id="clMsg">${msg || ""}</div>
+    <div class="row"><div class="t"><span class="em">🔑 رمز الصف: <b style="font-size:20px;letter-spacing:3px">${esc(c.code)}</b></span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="no" id="clCopy" style="width:auto;padding:6px 12px">⧉ انسخ الدعوة</button><a href="https://wa.me/?text=${encodeURIComponent(invite)}" target="_blank" rel="noopener"><button class="no" style="width:auto;padding:6px 12px">💬 دزه بالواتساب</button></a></div></div>
+    <h4 style="margin:14px 0 6px">📚 محاضرات الصف (${(docs || []).length.toLocaleString("ar-IQ")})</h4>
+    <label class="primary" style="display:block;text-align:center;cursor:pointer">➕ ارفع محاضرة للصف<input type="file" id="clFile" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv" multiple hidden></label>
+    ${(docs || []).map(d => `<div class="row"><div class="t"><span class="em">📄 ${esc(d.name)}</span></div><div style="color:var(--muted)">${(d.chars || 0).toLocaleString("ar-IQ")} حرف · ${dateAr(d.created_at)}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        <button class="no" data-ex="${d.id}" style="width:auto;padding:5px 10px">📝 امتحني منه</button>
+        <button class="no" data-sum="${d.id}" style="width:auto;padding:5px 10px">✨ اختصره</button>
+        <button class="no" data-sem="${d.id}" style="width:auto;padding:5px 10px">🎤 سيمينار منه</button>
+        <button class="no" data-take="${d.id}" style="width:auto;padding:5px 10px">📥 خذه لمكتبتي</button>
+        ${owner || d.user_id === user?.id ? `<button class="no" data-del="${d.id}" style="width:auto;padding:5px 10px">🗑️</button>` : ""}</div></div>`).join("") || '<div class="sub">لهسه ما انرفعت محاضرات. ارفعوا المحاضرات هنا، وكل الصف يستفاد منها.</div>'}
+    <div class="sub">💬 بأي محادثة، اسأل يار عن المادة، وهو يجاوب من محاضرات الصف تلقائياً.</div>
+    <h4 style="margin:14px 0 6px">👥 الأعضاء (${(roster || []).length.toLocaleString("ar-IQ")})</h4>
+    ${(roster || []).map(m => `<div class="row"><div class="t"><span class="em">${m.role === "owner" ? "⭐" : "👤"} ${esc(m.name)}</span>${m.covered ? '<span class="badge">ضمن باقة الصف</span>' : ""}${owner && m.role !== "owner" ? `<button class="no" data-kick="${m.user_id}" style="width:auto;padding:3px 8px">إخراج</button>` : ""}</div></div>`).join("")}
+    ${owner ? `<div class="sub">⭐ اشترك بـ«باقة الصف» حتى أول ٦ أعضاء ياخذون مميزات باقة الطلاب. <button class="no" id="clPlan" style="width:auto;padding:4px 10px">اشترك</button></div>` : ""}
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="no" id="clBack" style="width:auto;padding:6px 12px">→ رجوع</button>${owner ? `<button class="no" id="clDelete" style="width:auto;padding:6px 12px">🗑️ احذف الصف</button>` : `<button class="no" id="clLeave" style="width:auto;padding:6px 12px">🚪 اطلع من الصف</button>`}</div>`);
+  const say = (m) => $("clMsg").textContent = m;
+  $("clBack").onclick = () => showClasses();
+  $("clCopy").onclick = async () => { try { await navigator.clipboard.writeText(invite); say("✅ انسخت الدعوة"); } catch {} };
+  $("clPlan")?.addEventListener("click", () => showPlans("class"));
+  $("clDelete")?.addEventListener("click", async () => { if (!confirm("تحذف الصف وكل محاضراته؟ ما يرجع.")) return; await sb.from("classes").delete().eq("id", id); showClasses("انحذف الصف"); });
+  $("clLeave")?.addEventListener("click", async () => { if (!confirm("تطلع من الصف؟ خذ المحاضرات اللي تريدها لمكتبتك أول.")) return; await sb.from("class_members").delete().eq("class_id", id).eq("user_id", user.id); showClasses("طلعت من الصف"); });
+  $("modalBody").querySelectorAll("[data-kick]").forEach(b => b.onclick = async () => { if (!confirm("تطلّع هذا العضو؟")) return; await sb.from("class_members").delete().eq("class_id", id).eq("user_id", b.dataset.kick); openClass(id, "انطلع"); });
+  $("modalBody").querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { if (!confirm("تمسح هاي المحاضرة من الصف؟")) return; await sb.from("user_docs").delete().eq("id", b.dataset.del); openClass(id, "انمسحت"); });
+  const docText = async (did) => { const { data } = await sb.from("doc_chunks").select("content").eq("doc_id", did).order("idx").limit(2000); return (data || []).map(x => x.content).join("\n\n"); };
+  const nameOf = (did) => (docs || []).find(d => d.id === did)?.name || "محاضرة";
+  const attach = async (did) => { say("⏳ يجهّز المحاضرة…"); const t = await docText(did); ATT = [{ name: nameOf(did), mime: "text/plain", text: skim(t) }]; renderAtt(); saveAtt(); return t; };
+  $("modalBody").querySelectorAll("[data-ex]").forEach(b => b.onclick = async () => { await attach(b.dataset.ex); closeModal(); showExam(); });
+  $("modalBody").querySelectorAll("[data-sem]").forEach(b => b.onclick = async () => { await attach(b.dataset.ex || b.dataset.sem); closeModal(); showSeminar(); });
+  $("modalBody").querySelectorAll("[data-sum]").forEach(b => b.onclick = async () => { await attach(b.dataset.sum); closeModal(); $("input").value = "اختصرلي هاي المحاضرة بنقاط مرتبة، ويا أهم المصطلحات والأشياء اللي تجي بالامتحان"; send(); });
+  $("modalBody").querySelectorAll("[data-take]").forEach(b => b.onclick = async () => {
+    say("⏳ ينسخ لمكتبتك…"); const t = await docText(b.dataset.take);
+    const r = await saveToLibrary(nameOf(b.dataset.take), t, (p) => say(`⏳ ينسخ لمكتبتك… ${p.toLocaleString("ar-IQ")}٪`));
+    say(r.ok ? "✅ صارت بمكتبتك الخاصة، تبقى عندك حتى لو طلعت من الصف" : "⚠️ " + r.msg);
+  });
+  $("clFile").onchange = async e => {
+    for (const f of [...e.target.files]) {
+      const big = await tooBig(f); if (big) { say(big); continue; }
+      try {
+        say(`⏳ يقرا «${f.name}»…`); const t = await fileToText(f);
+        const r = await saveToLibrary(f.name, t, (p) => say(`⏳ يرفع «${f.name}» للصف… ${p.toLocaleString("ar-IQ")}٪`), id);
+        if (!r.ok) { say(r.msg === "ما بيه كتابة" ? `«${f.name}» ما بيه كتابة (صور ممسوحة). دزه بالمحادثة كصورة.` : "⚠️ " + r.msg); continue; }
+      } catch (err) { logErr(err?.message || err, "class upload"); say(`ما كدرت أقرا «${f.name}»`); }
+    }
+    openClass(id, "✅ انرفعت للصف");
+  };
+}
+// رابط دعوة: ?join=CODE
+(async () => {
+  const code = new URLSearchParams(location.search).get("join"); if (!code) return;
+  const tryJoin = async () => {
+    const { data: { session } } = await sb.auth.getSession(); if (!session) return setTimeout(tryJoin, 2000);
+    const { data, error } = await sb.rpc("join_class", { p_code: code });
+    history.replaceState(null, "", location.pathname);
+    if (!error) openClass(data.id, `✅ دخلت صف «${data.name}» 🎉`); else alertBox("رمز الصف غلط");
+  };
+  setTimeout(tryJoin, 1500);
+})();
 /* ===== دليل العراق: روابط رسمية موثوقة للمعاملات والشغل ===== */
 async function showGuide(){
   const { data: g } = await sb.from("iraq_guide").select("cat,icon,title,body,url").order("pos");
@@ -1263,7 +1346,7 @@ async function runFileTool(k, files){
   } catch (e) { console.error(e); logErr(e?.message || e, "filetool " + k); say("⚠️ صار خلل بالتحويل. جرّب ملف ثاني أو گلي شنو صار."); }
 }
 async function showLibrary(msg){
-  const { data: docs } = await sb.from("user_docs").select("id,name,chars,created_at").order("created_at", { ascending: false });
+  const { data: docs } = await sb.from("user_docs").select("id,name,chars,created_at").is("class_id", null).order("created_at", { ascending: false });
   openModal(`<h3>📚 مكتبتي</h3><div class="sub">ارفع ملفاتك (PDF، وورد، نص)، ويار يجاوب منها لمن تسأله. الملفات إلك بس، محد غيرك يشوفها.</div>
     <label class="primary" style="display:block;text-align:center;cursor:pointer">➕ ارفع ملف<input type="file" id="libFile" accept=".pdf,.docx,.xlsx,.xls,.pptx,.txt,.md,.csv" multiple hidden></label>
     <div class="msg" id="libMsg">${msg || ""}</div>
@@ -1286,6 +1369,7 @@ async function showLibrary(msg){
   };
 }
 $("libBtn").onclick = () => showLibrary();
+$("clsBtn").onclick = () => showClasses();
 $("iqBtn").onclick = () => showGuide();
 $("skillBtn").onclick = () => showSkills();
 $("fileIn").onchange = async () => {
@@ -1628,6 +1712,7 @@ function planFeatures(pl){
   if (pl.id === "free") f.push("يار سريع وبرو", "بحث عميق (يحسب ٣ رسائل)", "تصدير Word و PowerPoint و Excel");
   if (pl.id === "student") f.push("مراجعة ذاتية تقلل الأخطاء", "سمينارات وبحوث بمراجع حقيقية", "رفع ملفات PDF وصور");
   if (pl.id === "pro") f.push("مراجعة ذاتية تقلل الأخطاء", "صور Gemini الاحترافية", "💎 وضع خبير (Claude / Grok)");
+  if (pl.id === "class") f.push("👥 لـ ٦ طلاب، كل واحد بحسابه", "مميزات باقة الطلاب لكل واحد", "صف مشترك: محاضرات وامتحانات للكل");
   if (pl.id === "business") f.push("💎 وضع خبير بلا حدود تقريباً", "أولوية بالميزات الجديدة", "دعم مباشر");
   return f;
 }
