@@ -122,6 +122,9 @@ textarea::placeholder{color:var(--dim)}
 @media(max-width:560px){.hide-sm{display:none}}
 .cursor::after{content:"▍";color:var(--a1);animation:pulse 1s infinite;margin-inline-start:2px}
 .xmenu{position:relative;display:inline-block}.xmenu .dd{display:none;position:absolute;bottom:110%;inset-inline-start:0;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:6px;z-index:30;min-width:170px;box-shadow:0 8px 30px rgba(0,0,0,.4)}.xmenu.open .dd{display:block}.xmenu .dd button{display:block;width:100%;text-align:start;padding:8px 10px;border-radius:8px}.xmenu .dd button:hover{background:var(--panel)}
+.orb{width:120px;height:120px;border-radius:50%;margin:18px auto 0;background:radial-gradient(circle at 35% 30%,#a78bfa,#6d28d9 60%,#3b0764);box-shadow:0 0 0 0 rgba(124,92,255,.5);transition:.3s}
+.orb.listen{animation:pulse 1.4s infinite}.orb.think{animation:spin 1.2s linear infinite;background:conic-gradient(#7c5cff,#3b82f6,#7c5cff)}.orb.talk{animation:pulse .7s infinite;background:radial-gradient(circle at 35% 30%,#60a5fa,#2563eb 60%,#1e3a8a)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(124,92,255,.55)}100%{box-shadow:0 0 0 28px rgba(124,92,255,0)}}@keyframes spin{to{transform:rotate(360deg)}}
 #micBtn.rec{background:rgba(239,68,68,.18);border-color:#ef4444;color:#fff}
 .skchip{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(120deg,rgba(94,234,212,.14),rgba(167,139,250,.18));border:1px solid rgba(167,139,250,.45);border-radius:20px;padding:4px 6px 4px 12px;font-size:13.5px;margin-bottom:6px}.skchip button{background:transparent;border:0;color:var(--muted);font-size:14px;padding:0 4px}
 .sklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin:10px 0}
@@ -299,6 +302,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
               <button type="button" class="catchip" id="resBtn">🔎 بحث عميق بمراجع</button>
               <button type="button" class="catchip" id="thinkBtn">🧠 فكّر بعمق</button>
               <button type="button" class="catchip" id="micBtn">🎤 احچي بدل الكتابة</button>
+              <button type="button" class="catchip" id="callBtn">📞 مكالمة ويا يار</button>
               <div class="pm-sep"></div>
               <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span class="pm-sub">الفئة ▾</span>
                 <div class="catmenu" id="catMenu"></div></button>
@@ -409,6 +413,19 @@ function addCopy(d, text){
   cp.onclick = async () => { try { await navigator.clipboard.writeText(text); cp.textContent = "✓ انسخ"; setTimeout(()=>cp.textContent="⧉ نسخ",1500); } catch {} };
   const im = text.match(/!\[[^\]]*\]\((\S+?)\)/);
   if (im) { const a = document.createElement("a"); a.href = im[1]; a.target = "_blank"; a.rel = "noopener"; a.innerHTML = `<button>🖼️ افتح الصورة</button>`; t.appendChild(a); }
+  // تقييم الجواب: يساعدنا نعرف وين يار يغلط
+  const fb = document.createElement("span"); fb.className = "fb";
+  fb.innerHTML = `<button title="جواب زين">👍</button><button title="جواب مو زين">👎</button>`;
+  const [up, dn] = fb.querySelectorAll("button");
+  const sendFb = async (rating, note) => {
+    up.disabled = dn.disabled = true; (rating > 0 ? up : dn).style.opacity = "1"; (rating > 0 ? dn : up).style.opacity = ".3";
+    const q = d.previousElementSibling?.querySelector?.(".body")?.innerText || null;
+    try { await sb.from("feedback").insert({ conversation_id: convId || null, rating, reply: text.slice(0, 4000), question: q ? q.slice(0, 2000) : null, note: note || null }); } catch {}
+    fb.insertAdjacentHTML("beforeend", `<small style="color:var(--muted);margin-inline-start:6px">${rating > 0 ? "شكراً 💚" : "شكراً، راح نصلّحها"}</small>`);
+  };
+  up.onclick = () => sendFb(1);
+  dn.onclick = () => { const n = prompt("شنو كان الغلط؟ (اختياري)") || ""; sendFb(-1, n.slice(0, 500)); };
+  t.appendChild(fb);
   d.querySelector(".col").appendChild(t);
 }
 
@@ -670,6 +687,57 @@ function renderAtt(){
 }
 $("attBtn").onclick = () => $("fileIn").click();
 $("micBtn").onclick = () => toggleMic();
+// ===== مكالمة صوتية: تحچي، يار يجاوب بصوت، ويرجع يسمعك =====
+let CALL = null;
+function sayAloud(text){
+  return new Promise(async res => {
+    if (!("speechSynthesis" in window)) return res();
+    const clean = plain(text).replace(/https?:\/\/\S+/g, "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").slice(0, 1500);
+    const lg = textLang(clean), vs = await getVoicesReady();
+    let v = null; for (const tag of LANG_TAGS[lg]) { v = vs.find(x => x.lang.toLowerCase().replace("_","-").startsWith(tag.toLowerCase())); if (v) break; }
+    const u = new SpeechSynthesisUtterance(clean); if (v) u.voice = v; u.lang = v?.lang || LANG_TAGS[lg][0]; u.rate = 1.05;
+    u.onend = u.onerror = () => res(); speechSynthesis.cancel(); speechSynthesis.speak(u);
+  });
+}
+function callUI(state){
+  const st = $("callState"); if (!st) return;
+  st.textContent = { listen:"🎙️ يسمعك… احچي", think:"💭 يار يفكر…", talk:"🔊 يار يحچي…", idle:"" }[state] || state;
+  $("callOrb").className = "orb " + state;
+}
+async function callLoop(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  while (CALL) {
+    callUI("listen");
+    const heard = await new Promise(res => {
+      const r = new SR(); CALL.rec = r; r.lang = "ar-IQ"; r.interimResults = true; r.continuous = false;
+      let fin = ""; r.onresult = e => { fin = [...e.results].map(x => x[0].transcript).join(" "); $("callHeard").textContent = fin; };
+      r.onerror = () => res(""); r.onend = () => res(fin.trim()); try { r.start(); } catch { res(""); }
+    });
+    if (!CALL) break;
+    if (!heard) { await new Promise(r => setTimeout(r, 400)); continue; }
+    callUI("think");
+    $("input").value = heard; autosize();
+    await send();
+    while (busy) await new Promise(r => setTimeout(r, 300));
+    if (!CALL) break;
+    const bodies = document.querySelectorAll(".msgrow.ai .body");
+    const last = bodies[bodies.length - 1]?.innerText || "";
+    callUI("talk"); $("callHeard").textContent = "";
+    await sayAloud(last);
+  }
+}
+function startCall(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return alertBox("متصفحك ما يدعم المكالمة الصوتية، جرّب Chrome أو Safari");
+  openModal(`<div style="text-align:center;padding:10px 0"><h3>📞 مكالمة ويا يار</h3>
+    <div id="callOrb" class="orb"></div><div id="callState" class="sub" style="font-size:17px;margin-top:14px"></div>
+    <div id="callHeard" class="sub" style="min-height:44px"></div>
+    <button class="primary" id="endCall" style="background:#ef4444">إنهاء المكالمة</button></div>`);
+  CALL = {}; $("endCall").onclick = endCall; $("closeModal").addEventListener("click", endCall, { once: true });
+  callLoop();
+}
+function endCall(){ if (CALL?.rec) try { CALL.rec.abort(); } catch {} CALL = null; try { speechSynthesis.cancel(); } catch {} closeModal(); }
+$("callBtn").onclick = startCall;
 $("skillBtn").onclick = () => showSkills();
 $("fileIn").onchange = async () => {
   for (const f of [...$("fileIn").files].slice(0, 4 - ATT.length)) {
@@ -681,6 +749,14 @@ $("fileIn").onchange = async () => {
 };
 function saveAtt(){ try { sessionStorage.setItem("yar_att", JSON.stringify(ATT)); } catch { try { sessionStorage.removeItem("yar_att"); } catch {} } }
 try { const a = JSON.parse(sessionStorage.getItem("yar_att") || "[]"); if (Array.isArray(a) && a.length) { ATT = a; setTimeout(renderAtt, 0); } } catch {}
+// نسجّل أخطاء التطبيق حتى نصلّحها قبل ما يشتكي أحد
+let ERR_N = 0;
+function logErr(message, where){
+  if (ERR_N++ > 15) return;
+  try { sb.from("client_errors").insert({ message: String(message).slice(0, 800), where_: String(where || "").slice(0, 300), ua: navigator.userAgent.slice(0, 200) }).then(() => {}, () => {}); } catch {}
+}
+window.addEventListener("error", e => logErr(e.message, `${e.filename}:${e.lineno}`));
+window.addEventListener("unhandledrejection", e => logErr(e.reason?.message || e.reason, "promise"));
 function alertBox(m){ $("remain").textContent = "⚠️ " + m + " ·"; }
 
 /* ===== الدخول بـ Google + حماية Turnstile ===== */
@@ -1278,6 +1354,17 @@ async function showAdmin(){
     body = `<input class="field" id="q" placeholder="ابحث بالإيميل" dir="ltr">` + `<div id="ulist">${users.map(x=>`<div class="row" data-em="${esc((x.email||'').toLowerCase())}"><div class="t"><span class="em">${esc(x.email||'—')}</span><span class="badge ${x.plan}">${PLANS.find(p=>p.id===x.plan)?.name}</span></div>
       <div style="color:var(--muted)">${x.plan!=='free'?'ينتهي '+dateAr(x.plan_until)+' · ':''}استخدم اليوم ${x.used_today} رسالة</div>
       <div class="acts">${PLANS.filter(p=>p.price_iqd>0).map(p=>`<button data-act="approve" data-u="${x.user_id}" data-p="${p.id}">+ شهر ${p.name}</button>`).join("")}${x.plan!=='free'?`<button class="no" data-act="free" data-u="${x.user_id}">إلغاء</button>`:''}</div></div>`).join("")}</div>`;
+  } else if (adminTab === "quality") {
+    const [f, er] = await Promise.all([
+      sb.from("feedback").select("rating,question,reply,note,created_at").order("created_at",{ascending:false}).limit(60),
+      sb.from("client_errors").select("message,where_,created_at").order("created_at",{ascending:false}).limit(30),
+    ]);
+    const fs = f.data || [], ups = fs.filter(x=>x.rating>0).length, dns = fs.length - ups;
+    body = `<div class="stats"><div><b>${ups}</b><span>👍 زين</span></div><div><b>${dns}</b><span>👎 مو زين</span></div><div><b>${fs.length ? Math.round(ups*100/fs.length) : 0}٪</b><span>رضا</span></div></div>
+      <div class="sub" style="font-weight:700">آخر الأجوبة اللي ما عجبت:</div>
+      ${fs.filter(x=>x.rating<0).slice(0,20).map(x=>`<div class="row"><div><b>السؤال:</b> ${esc((x.question||'—').slice(0,200))}</div><div style="color:var(--muted)"><b>الجواب:</b> ${esc((x.reply||'').slice(0,250))}…</div>${x.note?`<div>📝 ${esc(x.note)}</div>`:''}<div style="color:var(--muted)">${dateAr(x.created_at)}</div></div>`).join("") || '<div class="sub">لهسه ماكو.</div>'}
+      <div class="sub" style="font-weight:700;margin-top:12px">آخر أخطاء التطبيق:</div>
+      ${(er.data||[]).map(x=>`<div class="row" dir="ltr" style="font-size:12px">${esc(x.message||'')} <span style="color:var(--muted)">${esc(x.where_||'')}</span></div>`).join("") || '<div class="sub">ماكو أخطاء 👌</div>'}`;
   } else if (adminTab === "profit") {
     const { data: st } = await sb.rpc("admin_usage_30d");
     const cm = +SETTINGS.cost_per_msg_iqd || 5, ci = +SETTINGS.cost_per_img_iqd || 0;
@@ -1297,7 +1384,7 @@ async function showAdmin(){
   }
   openModal(`<h3>لوحة التحكم</h3>
     <div class="stats"><div><b>${users.length}</b><span>مستخدم</span></div><div><b>${paying.length}</b><span>مشترك</span></div><div><b>${(income/1000).toLocaleString("ar-IQ")} ألف</b><span>دخل شهري تقريبي</span></div></div>
-    <div class="tabs"><button data-tab="requests" class="${adminTab==='requests'?'on':''}">الطلبات (${pend.length})</button><button data-tab="users" class="${adminTab==='users'?'on':''}">المستخدمين</button><button data-tab="profit" class="${adminTab==='profit'?'on':''}">💰 الأرباح</button><button data-tab="settings" class="${adminTab==='settings'?'on':''}">الإعدادات</button></div>${body}`);
+    <div class="tabs"><button data-tab="requests" class="${adminTab==='requests'?'on':''}">الطلبات (${pend.length})</button><button data-tab="users" class="${adminTab==='users'?'on':''}">المستخدمين</button><button data-tab="profit" class="${adminTab==='profit'?'on':''}">💰 الأرباح</button><button data-tab="quality" class="${adminTab==='quality'?'on':''}">⭐ الجودة</button><button data-tab="settings" class="${adminTab==='settings'?'on':''}">الإعدادات</button></div>${body}`);
   const m = $("modalBody");
   m.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ adminTab=b.dataset.tab; showAdmin(); });
   m.querySelectorAll("[data-act]").forEach(b=>b.onclick=async()=>{
@@ -1374,7 +1461,7 @@ const { data: { session } } = await sb.auth.getSession(); render(session);
 /* ===== زر + : كل الخصائص بقائمة وحدة ===== */
 $("plusBtn").onclick = e => { e.stopPropagation(); const o = $("plusMenu").classList.toggle("open"); $("plusBtn").classList.toggle("open", o); };
 document.addEventListener("click", e => { if (!e.target.closest(".plusWrap")) { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); } });
-["skillBtn","attBtn","imgBtn","resBtn","thinkBtn","micBtn"].forEach(id => $(id).addEventListener("click", () => { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); setTimeout(refreshActive, 0); }));
+["skillBtn","attBtn","imgBtn","resBtn","thinkBtn","micBtn","callBtn"].forEach(id => $(id).addEventListener("click", () => { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); setTimeout(refreshActive, 0); }));
 function refreshActive(){
   const items = [];
   if (curCat !== "general") items.push([$("catLabel").textContent, () => { curCat = "general"; setCatLabel(); if (!convId) welcome(); }]);
