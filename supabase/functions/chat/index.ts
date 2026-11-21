@@ -94,10 +94,24 @@ async function openrouter(model: string, system: string, contents: unknown[]) {
   return t;
 }
 
+type Part = { text?: string; inline_data?: { mime_type: string; data: string }; file_data?: unknown };
+const NOSEE = "[المستخدم رفع ملف أو صورة بس هالنموذج ما يكدر يشوفها. لا تدّعي إنك شفتها: گله بلطف إن قراءة الملفات مزدحمة هسة، ويجرب بعد دقايق أو يلصق النص مكتوب]";
 function toMsgs(system: string, contents: unknown[]) {
-  return [{ role: "system", content: system }, ...(contents as { role: string; parts: { text?: string }[] }[]).map((c) => ({
-    role: c.role === "model" ? "assistant" : "user", content: c.parts.map((p) => p.text ?? "").join("\n") || "(ملف مرفق)" }))];
+  return [{ role: "system", content: system }, ...(contents as { role: string; parts: Part[] }[]).map((c) => ({
+    role: c.role === "model" ? "assistant" : "user",
+    content: [c.parts.some((p) => p.inline_data || p.file_data) ? NOSEE : "", ...c.parts.map((p) => p.text ?? "")].filter(Boolean).join("\n") || "(ملف مرفق)" }))];
 }
+// نسخة تشوف الصور (للنماذج اللي تدعم الصور)
+function toMsgsVision(system: string, contents: unknown[]) {
+  return [{ role: "system", content: system }, ...(contents as { role: string; parts: Part[] }[]).map((c) => {
+    const imgs = c.parts.filter((p) => p.inline_data?.mime_type?.startsWith("image/"));
+    if (!imgs.length) return toMsgs("", [c])[1];
+    return { role: c.role === "model" ? "assistant" : "user", content: [
+      ...imgs.map((p) => ({ type: "image_url", image_url: { url: `data:${p.inline_data!.mime_type};base64,${p.inline_data!.data}` } })),
+      { type: "text", text: c.parts.map((p) => p.text ?? "").join("\n") || "شوف الصورة" }] };
+  })];
+}
+const hasImg = (contents: unknown[]) => (contents as { parts: Part[] }[]).some((c) => c.parts.some((p) => p.inline_data?.mime_type?.startsWith("image/")));
 
 // بث الجواب كلمة كلمة من Gemini. إذا كل النماذج وكعت نرجع للاحتياطي (بدون بث)
 async function geminiStream(system: string, contents: unknown[], search: boolean, models: string[], onText: (t: string) => void, o: CfOpts = {}) {
@@ -108,11 +122,15 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
   const dead = new Set<string>();
   for (const [model, useSearch] of tries) {
     if (dead.has(model)) continue; // رصيد هذا النموذج خالص: لا نضيّع وقت عليه
+    // مهلة لبداية الجواب بس (مو لطوله)، حتى ما يعلّق المستخدم
+    const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 45000);
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:streamGenerateContent?alt=sse`, {
-      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, signal: ac.signal,
       body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents,
         ...(useSearch ? { tools: [{ google_search: {} }] } : {}), generationConfig: { temperature: 0.6 } }),
-    });
+    }).catch((e) => { console.error("gemini", model, String(e)); return null; });
+    clearTimeout(tm);
+    if (!r) continue;
     if (!r.ok || !r.body) { lastErr = `${r.status} ${await r.text()}`; if (r.status === 429 || r.status === 404) dead.add(model); console.error("gemini", model, r.status); continue; }
     const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "", full = "";
@@ -139,6 +157,12 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
   }
   markDown(dead, models);
   // احتياط سريع ويا بث: Cloudflare يكتب الجواب كلمة كلمة
+  const img = hasImg(contents);
+  // صورة: نماذج تشوف الصور أول
+  if (img) for (const pv of visionProviders()) {
+    const t = await oaiStream(pv, system, contents, onText, o.maxTok, true);
+    if (t) return t;
+  }
   const st = await cfStream(system, contents, onText, o) ?? (o.cfModel ? await cfStream(system, contents, onText, { maxTok: o.maxTok ? 6000 : undefined }) : null);
   if (st) return st;
   // عقول مجانية قوية ويا بث (تشتغل إذا انحطت مفاتيحها)
@@ -187,11 +211,19 @@ function freeProviders(code: boolean): Prov[] {
     out.push({ name: "or", url: "https://openrouter.ai/api/v1/chat/completions", key: e("OPENROUTER_API_KEY"), model: m.trim() });
   return out;
 }
-async function oaiStream(pv: Prov, system: string, contents: unknown[], onText: (t: string) => void, maxTok?: number): Promise<string | null> {
+function visionProviders(): Prov[] {
+  const out: Prov[] = [];
+  const e = (k: string) => Deno.env.get(k) ?? "";
+  if (e("GROQ_API_KEY")) out.push({ name: "groq-vision", url: "https://api.groq.com/openai/v1/chat/completions", key: e("GROQ_API_KEY"), model: e("GROQ_VISION_MODEL") || "meta-llama/llama-4-scout-17b-16e-instruct" });
+  if (e("OPENROUTER_API_KEY")) for (const m of (e("OPENROUTER_VISION_MODELS") || "google/gemma-3-27b-it:free,meta-llama/llama-4-maverick:free").split(","))
+    out.push({ name: "or-vision", url: "https://openrouter.ai/api/v1/chat/completions", key: e("OPENROUTER_API_KEY"), model: m.trim() });
+  return out;
+}
+async function oaiStream(pv: Prov, system: string, contents: unknown[], onText: (t: string) => void, maxTok?: number, vision = false): Promise<string | null> {
   try {
     const r = await fetch(pv.url, { method: "POST", signal: AbortSignal.timeout(maxTok ? 150000 : 60000),
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${pv.key}`, "HTTP-Referer": "https://abdperfusion-svg.github.io/yar-ai/", "X-Title": "YAR AI" },
-      body: JSON.stringify({ model: pv.model, messages: toMsgs(system, contents), temperature: maxTok ? 0.3 : 0.6, stream: true, ...(maxTok ? { max_tokens: maxTok } : {}) }) });
+      body: JSON.stringify({ model: pv.model, messages: vision ? toMsgsVision(system, contents) : toMsgs(system, contents), temperature: maxTok ? 0.3 : 0.6, stream: true, ...(maxTok ? { max_tokens: maxTok } : {}) }) });
     if (!r.ok || !r.body) { console.error("free", pv.name, pv.model, r.status); return null; }
     const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "", full = "";
