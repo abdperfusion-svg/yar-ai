@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>محادثة من YAR AI</title>
+<link rel="icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<style>
+body{margin:0;background:#0f1115;color:#e9ecf1;font-family:Cairo,system-ui,sans-serif;line-height:1.8}
+header{position:sticky;top:0;background:#0f1115ee;backdrop-filter:blur(8px);border-bottom:1px solid #232733;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+header b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+header a{background:#2f6bff;color:#fff;text-decoration:none;padding:8px 14px;border-radius:999px;font-size:14px;white-space:nowrap}
+main{max-width:780px;margin:auto;padding:16px}
+.m{margin:14px 0;padding:12px 16px;border-radius:16px;overflow-wrap:anywhere}
+.u{background:#1d2433;margin-right:15%}
+.a{background:#151821;border:1px solid #232733}
+.m img{max-width:100%;border-radius:12px}
+pre{background:#0a0c10;padding:12px;border-radius:10px;overflow:auto;direction:ltr;text-align:left}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid #2a2f3b;padding:6px}
+.who{font-size:12px;color:#8b93a5;margin-bottom:4px}
+footer{text-align:center;color:#8b93a5;font-size:13px;padding:24px}
+</style>
+</head>
+<body>
+<header><b id="t">YAR AI</b><a href="./">جرّب يار ببلاش</a></header>
+<main id="c">يحمّل…</main>
+<footer>صُنع بواسطة YAR Studio</footer>
+<script>
+const URL_ = "https://wnjhsgjctevpaftvlcyr.supabase.co", KEY = "sb_publishable_qKc7vKrYAyUe0trChcVZuA_p-bBSubV";
+const id = new URLSearchParams(location.search).get("id") || "";
+(async () => {
+  const c = document.getElementById("c");
+  try {
+    const r = await fetch(`${URL_}/rest/v1/rpc/shared_conv`, { method: "POST", headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ p_id: id }) });
+    const d = await r.json();
+    if (!d || !d.messages) { c.textContent = "هاي المحادثة مو موجودة أو صاحبها وكّف المشاركة."; return; }
+    document.title = d.title + " | YAR AI"; document.getElementById("t").textContent = d.title;
+    c.innerHTML = "";
+    d.messages.forEach(m => {
+      const el = document.createElement("div"); el.className = "m " + (m.role === "user" ? "u" : "a");
+      el.innerHTML = `<div class="who">${m.role === "user" ? "السؤال" : "يار"}</div>` + DOMPurify.sanitize(marked.parse(String(m.content || "")));
+      c.appendChild(el);
+    });
+  } catch { c.textContent = "صار خلل، جرّب مرة ثانية."; }
+})();
+</script>
+</body>
+</html>

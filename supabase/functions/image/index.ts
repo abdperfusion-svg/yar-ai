@@ -152,7 +152,7 @@ async function freeImage(prompt: string, w: number, h: number): Promise<Uint8Arr
     try {
       const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/@cf/black-forest-labs/flux-1-schnell`, {
         method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: T(40000),
-        body: JSON.stringify({ prompt: p, num_steps: 8, seed }) });
+        body: JSON.stringify({ prompt: p, steps: 8 }) });
       if (r.ok) { const j = await r.json(); if (j?.result?.image) return b64(j.result.image); }
       console.error("cloudflare", r.status, (await r.text()).slice(0, 200));
     } catch (e) { console.error("cloudflare", String(e)); }

@@ -141,6 +141,11 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
   // احتياط سريع ويا بث: Cloudflare يكتب الجواب كلمة كلمة
   const st = await cfStream(system, contents, onText, o) ?? (o.cfModel ? await cfStream(system, contents, onText, { maxTok: o.maxTok ? 6000 : undefined }) : null);
   if (st) return st;
+  // عقول مجانية قوية ويا بث (تشتغل إذا انحطت مفاتيحها)
+  for (const pv of freeProviders(!!o.cfModel)) {
+    const t = await oaiStream(pv, system, contents, onText, o.maxTok);
+    if (t) return t;
+  }
   const t = await fallbackLLM(system, contents, false, lastErr);
   onText(t);
   return t;
@@ -172,6 +177,40 @@ async function cfStream(system: string, contents: unknown[], onText: (t: string)
   } catch (e) { console.error("cf stream", String(e)); return null; }
 }
 
+type Prov = { name: string; url: string; key: string; model: string };
+function freeProviders(code: boolean): Prov[] {
+  const out: Prov[] = [];
+  const e = (k: string) => Deno.env.get(k) ?? "";
+  if (e("CEREBRAS_API_KEY")) out.push({ name: "cerebras", url: "https://api.cerebras.ai/v1/chat/completions", key: e("CEREBRAS_API_KEY"), model: e("CEREBRAS_MODEL") || (code ? "qwen-3-coder-480b" : "gpt-oss-120b") });
+  if (e("GROQ_API_KEY")) out.push({ name: "groq", url: "https://api.groq.com/openai/v1/chat/completions", key: e("GROQ_API_KEY"), model: e("GROQ_MODEL") || (code ? "openai/gpt-oss-120b" : "llama-3.3-70b-versatile") });
+  if (e("OPENROUTER_API_KEY")) for (const m of (e("OPENROUTER_MODELS") || "deepseek/deepseek-chat-v3-0324:free,openrouter/free").split(","))
+    out.push({ name: "or", url: "https://openrouter.ai/api/v1/chat/completions", key: e("OPENROUTER_API_KEY"), model: m.trim() });
+  return out;
+}
+async function oaiStream(pv: Prov, system: string, contents: unknown[], onText: (t: string) => void, maxTok?: number): Promise<string | null> {
+  try {
+    const r = await fetch(pv.url, { method: "POST", signal: AbortSignal.timeout(maxTok ? 150000 : 60000),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${pv.key}`, "HTTP-Referer": "https://abdperfusion-svg.github.io/yar-ai/", "X-Title": "YAR AI" },
+      body: JSON.stringify({ model: pv.model, messages: toMsgs(system, contents), temperature: maxTok ? 0.3 : 0.6, stream: true, ...(maxTok ? { max_tokens: maxTok } : {}) }) });
+    if (!r.ok || !r.body) { console.error("free", pv.name, pv.model, r.status); return null; }
+    const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "", full = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith("data:") || line.includes("[DONE]")) continue;
+        try { const t = JSON.parse(line.slice(5))?.choices?.[0]?.delta?.content; if (t) { full += t; onText(t); } } catch { /* */ }
+      }
+    }
+    console.log("free ok", pv.name, pv.model);
+    return full.trim() ? full : null;
+  } catch (e) { console.error("free", pv.name, String(e)); return null; }
+}
+
 async function fallbackLLM(system: string, contents: unknown[], jsonOut: boolean, lastErr: string) {
   // احتياطي ١: OpenRouter بنماذج مجانية (يشتغل إذا انحط OPENROUTER_API_KEY)
   // احتياطي ٢: Groq (يشتغل إذا انحط GROQ_API_KEY)
@@ -188,9 +227,18 @@ async function fallbackLLM(system: string, contents: unknown[], jsonOut: boolean
       lastErr += ` | cf ${r.status}`;
     } catch (e) { lastErr += ` | cf ${e}`; }
   }
+  const cbk = Deno.env.get("CEREBRAS_API_KEY");
+  if (cbk) {
+    try {
+      const r = await fetch("https://api.cerebras.ai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${cbk}` },
+        body: JSON.stringify({ model: Deno.env.get("CEREBRAS_MODEL") ?? "gpt-oss-120b", messages: msgs, temperature: jsonOut ? 0.1 : 0.6 }) });
+      if (r.ok) { const j = await r.json(); const t = j?.choices?.[0]?.message?.content ?? ""; if (t.trim()) return clean(t); }
+      else lastErr += ` | cerebras ${r.status}`;
+    } catch (e) { lastErr += ` | cerebras ${e}`; }
+  }
   const ork = Deno.env.get("OPENROUTER_API_KEY");
   if (ork) {
-    const orModels = (Deno.env.get("OPENROUTER_MODELS") ?? "openrouter/free").split(",");
+    const orModels = (Deno.env.get("OPENROUTER_MODELS") ?? "deepseek/deepseek-chat-v3-0324:free,openrouter/free").split(",");
     for (const m of orModels) {
       try {
         const r = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST",
