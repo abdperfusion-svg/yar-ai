@@ -3,7 +3,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const TEXT_MODELS = ["gemini-3.5-flash-lite", ...(Deno.env.get("GEMINI_MODELS") ?? "gemini-3.5-flash,gemini-flash-latest").split(",")];
-const IMG_MODELS = (Deno.env.get("GEMINI_IMAGE_MODELS") ?? "gemini-3.1-flash-image,gemini-2.5-flash-image").split(",");
+const IMG_MODELS = (Deno.env.get("GEMINI_IMAGE_MODELS") ?? "gemini-nano-banana-2.1,gemini-3.1-flash-image,gemini-2.5-flash-image").split(",");
+const PRO_LOGO_COST = 5, PRO_POSTER_COST = 2; // نقاط التصميم الاحترافي للمستخدم المجاني
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 const T = (ms: number) => AbortSignal.timeout(ms);
 
@@ -58,6 +59,25 @@ async function gemImage(prompt: string, aspect: string): Promise<Uint8Array | nu
     const j = await r.json();
     const part = (j?.candidates?.[0]?.content?.parts ?? []).find((p: { inlineData?: { data: string } }) => p.inlineData);
     if (part) return Uint8Array.from(atob(part.inlineData.data), (c) => c.charCodeAt(0));
+  }
+  return null;
+}
+
+// شعار احترافي فيكتر (SVG) من Recraft
+async function recraftLogo(prompt: string): Promise<{ bytes: Uint8Array; svg: boolean } | null> {
+  const key = Deno.env.get("RECRAFT_API_KEY");
+  if (!key) return null;
+  for (const style of ["vector_illustration", "digital_illustration"]) {
+    const r = await fetch("https://external.api.recraft.ai/v1/images/generations", { method: "POST", signal: T(90000),
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: prompt.slice(0, 1000), style, model: Deno.env.get("RECRAFT_MODEL") ?? "recraftv3", size: "1024x1024", n: 1, response_format: "url" }) }).catch(() => null);
+    if (!r?.ok) { console.error("recraft", style, r?.status, r ? (await r.text()).slice(0, 200) : ""); continue; }
+    const u = (await r.json())?.data?.[0]?.url;
+    if (!u) continue;
+    const f = await fetch(u, { signal: T(30000) }).catch(() => null);
+    if (!f?.ok) continue;
+    const ct = f.headers.get("content-type") ?? "";
+    return { bytes: new Uint8Array(await f.arrayBuffer()), svg: ct.includes("svg") || /\.svg(\?|$)/i.test(u) };
   }
   return null;
 }
@@ -223,7 +243,26 @@ Deno.serve(async (req) => {
       bytes = await editImage(ref, text, spec.prompt);
       if (!bytes) note = "\n\n_ما كدرت أعدّل صورتك نفسها هسه، فسويتلك صورة جديدة بنفس الوصف._";
     }
-    if (!bytes && plan?.id !== "free" && Deno.env.get("GEMINI_IMAGES") === "1") bytes = await gemImage(spec.prompt, spec.aspect);
+    // التصميم الاحترافي: الشعار من Recraft، والبوستر من Nano Banana. مجاني للمشتركين، والباقين بالنقاط
+    let isSvg = false, proPaid = 0, proNote = "";
+    const wantPro = !hasRef && ((identity && !!Deno.env.get("RECRAFT_API_KEY")) || (design && Deno.env.get("GEMINI_IMAGES") === "1"));
+    if (wantPro) {
+      const cost = identity ? PRO_LOGO_COST : PRO_POSTER_COST;
+      const { data: isAdm } = await admin.rpc("is_admin_user", { p_user: user.id }).then((x) => x, () => ({ data: false }));
+      let allowed = plan?.id !== "free" || !!isAdm;
+      if (!allowed) {
+        const { data: left } = await admin.rpc("spend_points", { p_user: user.id, p_cost: cost, p_reason: identity ? "شعار احترافي" : "تصميم احترافي" });
+        if (typeof left === "number" && left >= 0) { allowed = true; proPaid = cost; pointsLeft = left; }
+        else proNote = `\n\n_التصميم الاحترافي يحتاج ${cost} نقاط ونقاطك ما تكفي، فسويتلك نسخة بالرسام المجاني. تكدر تشحن نقاط من «الباقات والنقاط»._`;
+      }
+      if (allowed) {
+        if (identity) { const rc = await recraftLogo(spec.prompt); if (rc) { bytes = rc.bytes; isSvg = rc.svg; } }
+        else bytes = await gemImage(spec.prompt, spec.aspect);
+        if (!bytes && proPaid) { await admin.rpc("refund_points", { p_user: user.id, p_amount: proPaid, p_reason: "إرجاع: التصميم الاحترافي ما اشتغل" }).then(() => {}, () => {}); proPaid = 0; proNote = "\n\n_الرسام الاحترافي ما اشتغل هالمرة فرجعتلك نقاطك، وهاي نسخة بالرسام المجاني._"; }
+      }
+    }
+    note += proNote;
+    if (!bytes && !wantPro && plan?.id !== "free" && Deno.env.get("GEMINI_IMAGES") === "1") bytes = await gemImage(spec.prompt, spec.aspect);
     if (!bytes) { const [w, h] = SIZES[spec.aspect]; bytes = await freeImage(spec.prompt, w, h); }
     console.log("image-time", Date.now() - t0, "ms");
     if (!bytes) {
@@ -232,8 +271,8 @@ Deno.serve(async (req) => {
       return json({ error: "خدمة الصور المجانية مزدحمة هسه. جرّب بعد شوية، وهاي المحاولة ما انحسبت من رصيدك." }, 503);
     }
 
-    const path = `${user.id}/${crypto.randomUUID()}.png`;
-    const up = await admin.storage.from("images").upload(path, bytes, { contentType: "image/png" });
+    const path = `${user.id}/${crypto.randomUUID()}.${isSvg ? "svg" : "png"}`;
+    const up = await admin.storage.from("images").upload(path, bytes, { contentType: isSvg ? "image/svg+xml" : "image/png" });
     if (up.error) return json({ error: "ما انحفظت الصورة، جرّب مرة ثانية" }, 500);
     const imageUrl = admin.storage.from("images").getPublicUrl(path).data.publicUrl;
 
@@ -246,7 +285,7 @@ Deno.serve(async (req) => {
       const { data: c } = await admin.from("conversations").select("id").eq("id", convId).eq("user_id", user.id).maybeSingle();
       if (!c) return json({ error: "المحادثة مو موجودة" }, 404);
     }
-    const reply = `${spec.caption}${note}\n\n![صورة](${imageUrl})`;
+    const reply = `${spec.caption}${note}\n\n![صورة](${imageUrl})` + (isSvg ? `\n\n⬇️ [نزّل الشعار كملف فيكتر SVG (يتعدّل بالفوتوشوب والإلستريتر)](${imageUrl})` : "");
     await admin.from("messages").insert([
       { conversation_id: convId, user_id: user.id, role: "user", content: (hasRef ? "🖼️ " : "🎨 ") + text },
       { conversation_id: convId, user_id: user.id, role: "assistant", content: reply },
