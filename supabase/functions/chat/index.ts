@@ -41,7 +41,7 @@ const REVIEWER = `إنت مراجع جودة. راح توصلك رسالة ال�
 رجّع الجواب النهائي فقط، بدون أي تعليق منك.`;
 
 const EXTRACTOR = `إنت ذاكرة "يار". استخرج من آخر رسالة للمستخدم كل معلومة ثابتة ومفيدة عنه للمستقبل:
-الاسم، العمر أو سنة الميلاد، الجنس، المدينة، الشغل ومكانه، الدراسة والتخصص والجامعة والمرحلة، العائلة (متزوج، أطفال وأسمائهم)، المشاريع والأهداف الجارية، المهارات والأدوات واللغات، الاهتمامات والهوايات، تفضيلاته بطريقة الجواب (طول، لغة، أسلوب)، وأي قرار أو معلومة ذكرها حتى ما يعيدها.
+الاسم، العمر أو سنة الميلاد، الجنس، المدينة، الشغل ومكانه، الدراسة والتخصص والجامعة والمرحلة، العائلة (متزوج، أطفال وأسمائهم)، المشاريع والأهداف الجارية، المهارات والأدوات واللغات، الاهتمامات والهوايات، تفضيلاته بطريقة الجواب (طول، لغة، أسلوب)، ميزانيته أو دخله التقريبي إذا ذكره (مثلاً "ميزانيته للمحل ٥ مليون دينار")، وأي قرار أو معلومة ذكرها حتى ما يعيدها.
 لا تحفظ: الأسئلة العابرة، كلمات السر، أرقام الهويات والبطاقات والحسابات المصرفية.
 كل معلومة جملة قصيرة واضحة تبدي بالموضوع، مثلاً: "اسمه محمد"، "عمره 24 سنة"، "يشتغل ممرض بمستشفى آزادي".
 لا تكرر شي موجود بالقائمة الحالية. إذا معلومة جديدة تصحح قديمة، حط القديمة بـ remove.
@@ -327,14 +327,17 @@ Deno.serve(async (req) => {
       cat = c.category; summary = c.summary;
     }
 
-    const [{ data: catRow }, { data: mems }, { data: hist }, { data: prof }] = await Promise.all([
+    const [{ data: catRow }, { data: mems }, { data: hist }, { data: prof }, { data: rules }] = await Promise.all([
       admin.from("categories").select("name,prompt").eq("id", cat).single(),
       admin.from("memories").select("id,fact").eq("user_id", user.id).order("created_at", { ascending: false }).limit(MAX_MEMORIES),
       admin.from("messages").select("role,content").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(HISTORY),
       admin.from("profiles").select("full_name,specialty,institution,stage,city,about").eq("user_id", user.id).maybeSingle(),
+      admin.from("ai_rules").select("rule").eq("active", true).order("pos"),
     ]);
 
     let system = PERSONA;
+    // قواعد إضافية من لوحة التحكم (تنضاف بدون إعادة نشر)
+    if (rules?.length) system += `\n${rules.map((r: { rule: string }) => "- " + r.rule).join("\n")}`;
     if (catRow?.prompt) system += `\n\n${catRow.prompt}`;
     if (prof) {
       const lines = [["الاسم", prof.full_name], ["التخصص أو الشغل", prof.specialty], ["الجامعة أو مكان العمل", prof.institution], ["المرحلة أو الخبرة", prof.stage], ["المدينة", prof.city], ["عن نفسه", prof.about]]
