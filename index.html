@@ -1641,7 +1641,7 @@ $("authBtn").onclick = async () => {
   if (signup && !r.data.session) $("authMsg").textContent = "✅ دزّينالك رسالة تأكيد على الإيميل، افتحها وبعدين سجّل دخول";
   if (/already registered/i.test(r.error?.message||"")) $("authMsg").textContent = "هذا الإيميل عنده حساب، سجّل دخول";
 };
-$("logoutBtn").onclick = () => sb.auth.signOut();
+$("logoutBtn").onclick = () => { try { for (const k of Object.keys(localStorage)) if (k.startsWith("yar")) localStorage.removeItem(k); sessionStorage.clear(); } catch {} sb.auth.signOut(); };
 $("forgotBtn").onclick = async () => {
   const email = $("email").value.trim();
   if (!email.includes("@")) { $("authMsg").textContent = "اكتب إيميلك فوگ أول، وبعدين اضغط «نسيت كلمة السر؟»"; return; }
@@ -2036,7 +2036,7 @@ $("connBtn").onclick = showConnections;
 
 /* ===== الملف الشخصي (يطلع أول مرة يسجّل) ===== */
 const PF = [
-  ["full_name","اسمك","مثلاً: عبدالرحمن طاهر"],
+  ["full_name","اسمك","اكتب اسمك هنا"],
   ["specialty","تخصصك أو شغلك","مثلاً: هندسة مدني / تمريض / مبرمج ويب"],
   ["institution","جامعتك أو مكان شغلك","مثلاً: جامعة بغداد / شركة…"],
   ["stage","المرحلة أو سنين الخبرة","مثلاً: مرحلة رابعة / ماجستير / ٥ سنين خبرة"],
