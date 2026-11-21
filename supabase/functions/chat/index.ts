@@ -113,6 +113,73 @@ function toMsgsVision(system: string, contents: unknown[]) {
 }
 const hasImg = (contents: unknown[]) => (contents as { parts: Part[] }[]).some((c) => c.parts.some((p) => p.inline_data?.mime_type?.startsWith("image/")));
 
+// ===== Claude (Anthropic): العقل الأساسي ليار =====
+const CLAUDE_FAST = Deno.env.get("ANTHROPIC_MODEL") ?? "claude-haiku-5-5";
+const CLAUDE_EXPERT = Deno.env.get("ANTHROPIC_EXPERT_MODEL") ?? "claude-sonnet-5-5";
+function toClaude(contents: unknown[]) {
+  const out: { role: string; content: unknown[] }[] = [];
+  for (const c of contents as { role: string; parts: Part[] }[]) {
+    const role = c.role === "model" ? "assistant" : "user";
+    const blocks: unknown[] = [];
+    for (const p of c.parts) {
+      const d = p.inline_data;
+      if (d?.mime_type?.startsWith("image/")) blocks.push({ type: "image", source: { type: "base64", media_type: d.mime_type === "image/jpg" ? "image/jpeg" : d.mime_type, data: d.data } });
+      else if (d?.mime_type === "application/pdf") blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: d.data } });
+      else if (d) blocks.push({ type: "text", text: NOSEE });
+      else if (p.file_data) blocks.push({ type: "text", text: "[رابط فيديو يوتيوب: ما تكدر تشوفه بهالنموذج. گله بلطف يجرب بعد شوية]" });
+      else if (p.text) blocks.push({ type: "text", text: p.text });
+    }
+    if (!blocks.length) blocks.push({ type: "text", text: "(فارغ)" });
+    const last = out[out.length - 1];
+    if (last && last.role === role) last.content.push(...blocks); else out.push({ role, content: blocks });
+  }
+  while (out.length && out[0].role !== "user") out.shift();
+  return out;
+}
+async function claudeStream(system: string, contents: unknown[], onText: (t: string) => void, model = CLAUDE_FAST, maxTok = 8000): Promise<string | null> {
+  const key = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!key) return null;
+  try {
+    const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 30000);
+    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: ac.signal,
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model, system, messages: toClaude(contents), max_tokens: maxTok, stream: true }) });
+    clearTimeout(tm);
+    if (!r.ok || !r.body) { console.error("claude", model, r.status, (await r.text()).slice(0, 300)); return null; }
+    const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "", full = "", inTok = 0, outTok = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith("data:")) continue;
+        try {
+          const j = JSON.parse(line.slice(5));
+          if (j.type === "content_block_delta" && j.delta?.type === "text_delta") { full += j.delta.text; onText(j.delta.text); }
+          else if (j.type === "message_start") inTok = j.message?.usage?.input_tokens ?? 0;
+          else if (j.type === "message_delta") outTok = j.usage?.output_tokens ?? outTok;
+        } catch { /* */ }
+      }
+    }
+    console.log("claude ok", model, "in", inTok, "out", outTok);
+    return full.trim() ? full : null;
+  } catch (e) { console.error("claude", model, String(e)); return null; }
+}
+// الأسئلة اللي تحتاج معلومات حديثة تروح لـ Gemini (عنده بحث جوجل)
+const NEEDS_WEB = /(سعر|اسعار|أسعار|صرف|الدولار|اليوم|هسة|حالياً|حاليا|آخر|اخر|أخبار|اخبار|خبر|نتائج|موعد|متى|دوام|عطلة|رابط|موقع|2025|2026|2027|news|price|today|latest|current)/i;
+async function smartStream(system: string, contents: unknown[], search: boolean, models: string[], onText: (t: string) => void, o: CfOpts & { yt?: boolean; text?: string } = {}) {
+  // يوتيوب أو سؤال يحتاج بحث: Gemini أول، وبعدين Claude
+  const geminiFirst = o.yt || (search && NEEDS_WEB.test(o.text ?? ""));
+  if (!geminiFirst && Deno.env.get("ANTHROPIC_API_KEY")) {
+    const t = await claudeStream(system, contents, onText, CLAUDE_FAST, o.maxTok ? 16000 : 8000);
+    if (t) return t;
+  }
+  return await geminiStream(system, contents, search, models, onText, o);
+}
+
 // بث الجواب كلمة كلمة من Gemini. إذا كل النماذج وكعت نرجع للاحتياطي (بدون بث)
 async function geminiStream(system: string, contents: unknown[], search: boolean, models: string[], onText: (t: string) => void, o: CfOpts = {}) {
   const key = Deno.env.get("GEMINI_API_KEY");
@@ -156,6 +223,10 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
     lastErr = "empty";
   }
   markDown(dead, models);
+  {
+    const ct = await claudeStream(system, contents, onText, CLAUDE_FAST, o.maxTok ? 16000 : 8000);
+    if (ct) return ct;
+  }
   if (o.alt) contents = o.alt; // العقول الاحتياطية تاخذ نص الملفات
   // احتياط سريع ويا بث: Cloudflare يكتب الجواب كلمة كلمة
   const img = hasImg(contents);
@@ -516,13 +587,17 @@ Deno.serve(async (req) => {
     const generate = async (onText?: (t: string) => void) => {
       LAST_SOURCES = [];
       if (md === "expert") {
+        if (Deno.env.get("ANTHROPIC_API_KEY")) {
+          const t = onText ? await claudeStream(sys, contents, onText, CLAUDE_EXPERT, 16000) : await claudeStream(sys, contents, () => {}, CLAUDE_EXPERT, 16000);
+          if (t) return t;
+        }
         for (const m of expertModels) {
           try { const t = await openrouter(m.trim(), sys, contents); onText?.(t); return t; } catch (e) { console.error("expert", m, String(e)); }
         }
         // ما اشتغل أي نموذج خبير: نرجّع النقاط
         if (expertPaidPoints) { await admin.rpc("refund_points", { p_user: user.id, p_amount: 3, p_reason: "إرجاع: الخبير ما اشتغل" }).then(() => {}, () => {}); expertPaidPoints = false; }
       }
-      if (onText) return await geminiStream(sys, contents, useSearch, gModels, onText, { ...(buildMode ? { cfModel: "@cf/qwen/qwen2.5-coder-32b-instruct", maxTok: 7500 } : {}), alt: altContents });
+      if (onText) return await smartStream(sys, contents, useSearch, gModels, onText, { ...(buildMode ? { cfModel: "@cf/qwen/qwen2.5-coder-32b-instruct", maxTok: 7500 } : {}), alt: altContents, yt: yt.length > 0, text });
       let draft = await gemini(sys, contents, false, useSearch, gModels);
       if (plan?.review) {
         try { draft = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `الفئة: ${catRow?.name}\nرسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]); } catch { /* نخلي المسودة */ }
