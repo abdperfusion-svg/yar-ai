@@ -4,7 +4,6 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const TEXT_MODELS = ["gemini-3.5-flash-lite", ...(Deno.env.get("GEMINI_MODELS") ?? "gemini-3.5-flash,gemini-flash-latest").split(",")];
 const IMG_MODELS = (Deno.env.get("GEMINI_IMAGE_MODELS") ?? "gemini-nano-banana-2.1,gemini-3.1-flash-image,gemini-2.5-flash-image").split(",");
-const PRO_LOGO_COST = 5, PRO_POSTER_COST = 2; // نقاط التصميم الاحترافي للمستخدم المجاني
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 const T = (ms: number) => AbortSignal.timeout(ms);
 
@@ -247,22 +246,20 @@ Deno.serve(async (req) => {
     let isSvg = false, proPaid = 0, proNote = "";
     const wantPro = !hasRef && ((identity && !!Deno.env.get("RECRAFT_API_KEY")) || (design && Deno.env.get("GEMINI_IMAGES") === "1"));
     if (wantPro) {
-      const cost = identity ? PRO_LOGO_COST : PRO_POSTER_COST;
-      const { data: isAdm } = await admin.rpc("is_admin_user", { p_user: user.id }).then((x) => x, () => ({ data: false }));
-      let allowed = plan?.id !== "free" || !!isAdm;
-      if (!allowed) {
-        const { data: left } = await admin.rpc("spend_points", { p_user: user.id, p_cost: cost, p_reason: identity ? "شعار احترافي" : "تصميم احترافي" });
-        if (typeof left === "number" && left >= 0) { allowed = true; proPaid = cost; pointsLeft = left; }
-        else proNote = `\n\n_التصميم الاحترافي يحتاج ${cost} نقاط ونقاطك ما تكفي، فسويتلك نسخة بالرسام المجاني. تكدر تشحن نقاط من «الباقات والنقاط»._`;
-      }
-      if (allowed) {
+      const { data: ch } = await admin.rpc("pro_charge", { p_user: user.id, p_kind: identity ? "logo" : "poster" });
+      if (ch?.ok) {
+        proPaid = ch.paid_points ?? 0; if (typeof ch.left === "number") pointsLeft = ch.left;
         if (identity) { const rc = await recraftLogo(spec.prompt); if (rc) { bytes = rc.bytes; isSvg = rc.svg; } }
         else bytes = await gemImage(spec.prompt, spec.aspect);
-        if (!bytes && proPaid) { await admin.rpc("refund_points", { p_user: user.id, p_amount: proPaid, p_reason: "إرجاع: التصميم الاحترافي ما اشتغل" }).then(() => {}, () => {}); proPaid = 0; proNote = "\n\n_الرسام الاحترافي ما اشتغل هالمرة فرجعتلك نقاطك، وهاي نسخة بالرسام المجاني._"; }
-      }
+        if (!bytes) {
+          if (proPaid) await admin.rpc("refund_points", { p_user: user.id, p_amount: proPaid, p_reason: "إرجاع: التصميم الاحترافي ما اشتغل" }).then(() => {}, () => {});
+          else await admin.rpc("pro_uncharge", { p_user: user.id }).then(() => {}, () => {});
+          proPaid = 0; proNote = "\n\n_الرسام الاحترافي ما اشتغل هالمرة فرجعتلك رصيدك، وهاي نسخة بالرسام المجاني._";
+        } else if (ch.quota) proNote = `\n\n_تصميم احترافي من باقتك (${ch.quota_used} من ${ch.quota} هالشهر)._`;
+        else if (proPaid) proNote = `\n\n_تصميم احترافي بـ ${proPaid} نقطة._`;
+      } else proNote = `\n\n_التصميم الاحترافي يحتاج ${ch?.cost ?? 15} نقطة ونقاطك ما تكفي، فسويتلك نسخة بالرسام المجاني. اشحن نقاط من «الباقات والنقاط» حتى تاخذ النسخة الاحترافية._`;
     }
     note += proNote;
-    if (!bytes && !wantPro && plan?.id !== "free" && Deno.env.get("GEMINI_IMAGES") === "1") bytes = await gemImage(spec.prompt, spec.aspect);
     if (!bytes) { const [w, h] = SIZES[spec.aspect]; bytes = await freeImage(spec.prompt, w, h); }
     console.log("image-time", Date.now() - t0, "ms");
     if (!bytes) {
