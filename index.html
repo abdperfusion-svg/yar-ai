@@ -98,7 +98,8 @@ main.empty .topbar{position:absolute;top:0;inset-inline:0}
 .body th,.body td{border:1px solid var(--line);padding:7px 11px;text-align:right}.body th{background:var(--panel)}
 .body blockquote{border-inline-start:3px solid var(--a1);padding-inline-start:12px;color:var(--muted);margin:8px 0}
 .body a{color:#5EEAD4}
-.tools{margin-top:8px;display:flex;gap:2px}
+.tools{margin-top:8px;display:flex;gap:2px;flex-wrap:wrap}
+pre .cpy{position:absolute;top:6px;left:6px;font-size:12px;padding:3px 9px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);opacity:.85}
 .tools button{background:transparent;border:0;color:var(--dim);border-radius:8px;font-size:13px;padding:5px 8px}
 .tools button:hover{background:var(--panel2);color:var(--text)}
 .thinking{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:15px}
@@ -444,7 +445,24 @@ function addCopy(d, text){
   up.onclick = () => sendFb(1);
   dn.onclick = () => { const n = prompt("شنو كان الغلط؟ (اختياري)") || ""; sendFb(-1, n.slice(0, 500)); };
   t.appendChild(fb);
+  // 🔄 إعادة الجواب، و✏️ تعديل السؤال (مثل DeepSeek وGemini)
+  const q0 = d.previousElementSibling?.classList.contains("user") ? d.previousElementSibling.querySelector(".body")?.innerText || "" : "";
+  if (q0 && !/^[📎🖼️🎨]/u.test(q0)) {
+    const rg = document.createElement("button"); rg.title = "جواب ثاني"; rg.textContent = "🔄";
+    rg.onclick = () => { if (busy) return; $("input").value = q0; $("sendBtn").click(); };
+    const ed = document.createElement("button"); ed.title = "عدّل سؤالك"; ed.textContent = "✏️";
+    ed.onclick = () => { const i = $("input"); i.value = q0; i.focus(); autosize(); };
+    t.insertBefore(ed, t.firstChild); t.insertBefore(rg, t.firstChild);
+  }
   d.querySelector(".col").appendChild(t);
+  // زر نسخ لكل كود
+  d.querySelectorAll(".body pre").forEach(pre => {
+    if (pre.querySelector(".cpy")) return;
+    pre.style.position = "relative";
+    const c = document.createElement("button"); c.className = "cpy"; c.textContent = "⧉ انسخ";
+    c.onclick = async () => { try { await navigator.clipboard.writeText(pre.querySelector("code")?.innerText || pre.innerText); c.textContent = "✓"; setTimeout(() => c.textContent = "⧉ انسخ", 1500); } catch {} };
+    pre.appendChild(c);
+  });
   addBuilder(d, text);
 }
 
