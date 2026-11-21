@@ -57,6 +57,7 @@ aside{width:272px;background:var(--side);display:flex;flex-direction:column;min-
 .cmore{background:none;border:0;color:var(--dim);font-size:18px;cursor:pointer;padding:0 6px;opacity:.55}.conv:hover .cmore,.conv.active .cmore{opacity:1}
 .cmenu{position:fixed;z-index:9999;background:var(--panel);border:1px solid var(--line,#333);border-radius:12px;padding:6px;min-width:190px;box-shadow:0 10px 30px #0006;display:flex;flex-direction:column}
 .cmenu button{background:none;border:0;color:var(--text);text-align:right;padding:10px 12px;border-radius:8px;font:inherit;font-size:14px;cursor:pointer}.cmenu button:hover{background:var(--panel2)}
+.ftgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin:12px 0}.ftb{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-radius:14px;background:var(--panel2);border:1px solid var(--line,#333);color:var(--text);font:inherit;font-size:13.5px;cursor:pointer}.ftb span{font-size:22px}.ftb:hover{border-color:#2f6bff}
 .me{border-top:1px solid var(--line);padding:10px;position:relative}
 .me-btn{width:100%;display:flex;align-items:center;gap:10px;background:transparent;border:0;padding:8px;border-radius:12px;text-align:right}
 .me-btn:hover{background:var(--panel2)}
@@ -301,7 +302,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
       <div class="box">
         <div id="skillChip" style="display:none"></div>
         <div id="attList" style="display:flex;gap:6px;flex-wrap:wrap"></div>
-        <input type="file" id="fileIn" accept="image/*,application/pdf,text/plain" multiple hidden>
+        <input type="file" id="fileIn" accept="image/*,application/pdf,.pdf,.docx,.xlsx,.xls,.csv,.pptx,.txt,.md" multiple hidden>
         <textarea id="input" rows="1" placeholder="اسأل يار أي شي…"></textarea>
         <div class="box-row">
           <div class="plusWrap">
@@ -316,7 +317,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
               <button type="button" class="catchip" id="micBtn">🎤 احچي بدل الكتابة</button>
               <button type="button" class="catchip" id="callBtn">📞 مكالمة ويا يار</button>
               <button type="button" class="catchip" id="libBtn">📚 مكتبتي</button>
-              <button type="button" class="catchip" id="iqBtn">🇮🇶 دليل العراق</button>
+              <button type="button" class="catchip" id="iqBtn">🇮🇶 دليل العراق</button><button type="button" class="catchip" id="ftBtn">📁 أدوات الملفات</button>
               <div class="pm-sep"></div>
               <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span class="pm-sub">الفئة ▾</span>
                 <div class="catmenu" id="catMenu"></div></button>
@@ -811,7 +812,7 @@ async function toggleMic(){
 /* ===== رفع الملفات (PDF، صور، نص) ===== */
 let ATT = [];
 function renderAtt(){
-  $("attList").innerHTML = ATT.map((f,i)=>`<div class="att">${f.mime.startsWith("image/")?"🖼️":"📄"}<span>${esc(f.name)}</span><button type="button" data-x="${i}">✕</button></div>`).join("");
+  $("attList").innerHTML = ATT.map((f,i)=>`<div class="att">${f.mime.startsWith("image/")?"🖼️":/\.(xlsx|xls|csv)$/i.test(f.name)?"📗":/\.docx$/i.test(f.name)?"📝":/\.pptx$/i.test(f.name)?"📊":"📄"}<span>${esc(f.name)}</span><button type="button" data-x="${i}">✕</button></div>`).join("");
   $("attList").querySelectorAll("[data-x]").forEach(b=>b.onclick=()=>{ ATT.splice(+b.dataset.x,1); renderAtt(); saveAtt(); });
 }
 $("attBtn").onclick = () => $("fileIn").click();
@@ -882,6 +883,18 @@ async function fileToText(f){
     if (!window.mammoth) await new Promise((ok, no) => { const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); });
     return (await window.mammoth.extractRawText({ arrayBuffer: await f.arrayBuffer() })).value;
   }
+  if (/\.(xlsx|xls)$/.test(n)) {
+    const X = await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+    const wb = X.read(await f.arrayBuffer());
+    return wb.SheetNames.map(sh => `### ورقة: ${sh}\n` + X.utils.sheet_to_csv(wb.Sheets[sh])).join("\n\n");
+  }
+  if (n.endsWith(".pptx")) {
+    const { default: JSZip } = await import("https://esm.sh/jszip@3.10.1");
+    const z = await JSZip.loadAsync(await f.arrayBuffer());
+    const sl = Object.keys(z.files).filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k)).sort((a,b) => +a.match(/\d+/)[0] - +b.match(/\d+/)[0]);
+    let out = ""; for (const [i,k] of sl.entries()) { const x = await z.file(k).async("string"); out += `### شريحة ${i+1}\n` + [...x.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map(m => m[1]).join(" ") + "\n\n"; }
+    return out;
+  }
   return await f.text();
 }
 function chunkText(t){
@@ -900,6 +913,121 @@ async function showGuide(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener"><button style="width:auto;padding:6px 12px">🔗 الموقع الرسمي</button></a>` : ""}<button class="no" data-ask="${esc(x.title)}" style="width:auto;padding:6px 12px">💬 اسأل يار</button></div></div>`).join("")).join("")}
     <div class="sub">⚠️ الشروط والرسوم تتغير، فيار يبحث بآخر المعلومات. المواقع الحكومية الرسمية تنتهي بـ gov.iq.</div>`);
   $("modalBody").querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { closeModal(); const q = $("input"); q.value = `اشرحلي خطوة بخطوة وبآخر المعلومات: ${b.dataset.ask}`; q.focus(); });
+}
+/* ===== أدوات الملفات: تحويل ودمج وتقسيم وفك قفل، كلها بموبايل المستخدم وببلاش ===== */
+const FT = [
+  ["pdf2word", "📄➡️📝", "PDF إلى Word", ".pdf", false],
+  ["word2pdf", "📝➡️📄", "Word إلى PDF", ".docx", false],
+  ["img2pdf", "🖼️➡️📄", "صور إلى PDF", "image/*", true],
+  ["pdf2img", "📄➡️🖼️", "PDF إلى صور", ".pdf", false],
+  ["merge", "🧩", "دمج ملفات PDF", ".pdf", true],
+  ["split", "✂️", "استخراج صفحات من PDF", ".pdf", false],
+  ["unlock", "🔓", "فك قفل PDF (تعرف رمزه)", ".pdf", false],
+  ["excel2pdf", "📗➡️📄", "Excel إلى PDF", ".xlsx,.xls,.csv", false],
+  ["any2text", "🔤", "طلّع النص من أي ملف", ".pdf,.docx,.xlsx,.pptx,.txt", false],
+];
+const libLoad = (src, g) => window[g] ? Promise.resolve() : new Promise((ok, no) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); });
+const pdfLib = async () => { await libLoad("https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js", "PDFLib"); return window.PDFLib; };
+const pdfJs = async () => { const m = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs"); m.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs"; return m; };
+const baseName = (f) => f.name.replace(/\.[^.]+$/, "");
+// يحوّل صفحة HTML لـ PDF حقيقي (يدعم العربي لأنه يرسمها كصورة)
+async function htmlToPdf(html, name){
+  await libLoad("https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js", "html2pdf");
+  const box = document.createElement("div");
+  box.innerHTML = `<div dir="auto" style="font-family:Cairo,Tahoma,Arial;color:#111;background:#fff;padding:24px;line-height:1.9;font-size:14px">${html}<p style="color:#999;font-size:11px;margin-top:30px">صُنع بواسطة YAR AI · YAR Studio</p></div>`;
+  box.querySelectorAll("table").forEach(t => { t.style.borderCollapse = "collapse"; t.querySelectorAll("td,th").forEach(c => { c.style.border = "1px solid #bbb"; c.style.padding = "4px 8px"; }); });
+  await window.html2pdf().set({ margin: 10, filename: name, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2 }, jsPDF: { unit: "mm", format: "a4" }, pagebreak: { mode: ["css", "legacy"] } }).from(box.firstElementChild).save();
+}
+function showFileTools(){
+  openModal(`<h3>📁 أدوات الملفات</h3><div class="sub">اختار شنو تريد، وارفع ملفك. كل شي يصير داخل موبايلك، وملفاتك ما تطلع لأي مكان، وببلاش.</div>
+    <div class="ftgrid">${FT.map(([k, ic, t]) => `<button class="ftb" data-k="${k}"><span>${ic}</span>${t}</button>`).join("")}</div>
+    <div id="ftOut" class="sub"></div>
+    <div class="sub">💡 تريد ملف جديد؟ اطلب من يار يكتبه (مثلاً «سويلي تقرير عن…»)، وبعدها اضغط «⬇️ تصدير» تحت الجواب واختار PDF أو Word أو Excel أو PowerPoint.</div>`);
+  $("modalBody").querySelectorAll(".ftb").forEach(b => b.onclick = () => {
+    const [k, , , acc, multi] = FT.find(x => x[0] === b.dataset.k);
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = acc; inp.multiple = multi;
+    inp.onchange = () => runFileTool(k, [...inp.files]); inp.click();
+  });
+}
+async function runFileTool(k, files){
+  if (!files.length) return;
+  const out = $("ftOut"), say = (m) => { if (out) out.innerHTML = m; };
+  say("⏳ يشتغل… لا تسكّر الصفحة");
+  try {
+    const f = files[0];
+    if (k === "pdf2word") {
+      const pdfjs = await pdfJs(), doc = await pdfjs.getDocument({ data: await f.arrayBuffer() }).promise, d = await import("https://esm.sh/docx@9.0.2");
+      const paras = [];
+      for (let i = 1; i <= doc.numPages; i++) {
+        const tc = await (await doc.getPage(i)).getTextContent(); let line = "", lastY = null;
+        for (const it of tc.items) { const y = Math.round(it.transform?.[5] ?? 0); if (lastY !== null && Math.abs(y - lastY) > 3) { paras.push(line.trim()); line = ""; } line += it.str + (it.hasEOL ? "\n" : " "); lastY = y; }
+        if (line.trim()) paras.push(line.trim());
+        if (i < doc.numPages) paras.push("__PAGE__");
+      }
+      if (!paras.filter(p => p && p !== "__PAGE__").length) return say("⚠️ هذا الـPDF صور ممسوحة بدون نص. ارفعه ليار بالمحادثة ويطلّعلك النص منه.");
+      const kids = paras.map(p => p === "__PAGE__" ? new d.Paragraph({ children: [new d.PageBreak()] }) : new d.Paragraph({ bidirectional: /[؀-ۿ]/.test(p), children: [new d.TextRun({ text: p, font: "Arial", size: 24, rightToLeft: /[؀-ۿ]/.test(p) })] }));
+      save(await d.Packer.toBlob(new d.Document({ creator: "YAR AI", sections: [{ children: kids }] })), baseName(f) + ".docx");
+      return say("✅ تحوّل لملف Word. ملاحظة: ينقل الكلام والترتيب، والتصميم المعقد ممكن يتغيّر شوية.");
+    }
+    if (k === "word2pdf") {
+      await libLoad("https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js", "mammoth");
+      const { value } = await window.mammoth.convertToHtml({ arrayBuffer: await f.arrayBuffer() });
+      await htmlToPdf(value, baseName(f) + ".pdf"); return say("✅ تحوّل لـ PDF.");
+    }
+    if (k === "excel2pdf") {
+      const X = await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs"), wb = X.read(await f.arrayBuffer());
+      await htmlToPdf(wb.SheetNames.map(n => `<h3>${esc(n)}</h3>` + X.utils.sheet_to_html(wb.Sheets[n], { header: "", footer: "" })).join('<div style="page-break-after:always"></div>'), baseName(f) + ".pdf");
+      return say("✅ تحوّل لـ PDF.");
+    }
+    if (k === "img2pdf") {
+      const P = await pdfLib(), doc = await P.PDFDocument.create();
+      for (const im of files) {
+        // نرسم الصورة على كانفس حتى أي نوع (webp، heic المدعوم) يصير JPG
+        const url = URL.createObjectURL(im), img = await loadImg(url), c = document.createElement("canvas");
+        const k2 = Math.min(1, 2400 / Math.max(img.width, img.height)); c.width = img.width * k2; c.height = img.height * k2;
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        const jpg = await doc.embedJpg(await (await fetch(c.toDataURL("image/jpeg", 0.9))).arrayBuffer());
+        const pg = doc.addPage([595, 842]), sc = Math.min(555 / jpg.width, 802 / jpg.height);
+        pg.drawImage(jpg, { x: (595 - jpg.width * sc) / 2, y: (842 - jpg.height * sc) / 2, width: jpg.width * sc, height: jpg.height * sc });
+      }
+      save(new Blob([await doc.save()], { type: "application/pdf" }), "صور-YAR.pdf"); return say(`✅ ${files.length} صورة صارت ملف PDF واحد.`);
+    }
+    if (k === "pdf2img" || k === "unlock") {
+      const pdfjs = await pdfJs(); let pw = "";
+      if (k === "unlock") { pw = prompt("اكتب رمز الملف:") || ""; if (!pw) return say(""); }
+      let doc; try { doc = await pdfjs.getDocument({ data: await f.arrayBuffer(), password: pw }).promise; }
+      catch (e) { return say(e?.name === "PasswordException" ? "⚠️ الرمز غلط، أو الملف مقفول. استخدم «فك قفل PDF» واكتب الرمز الصحيح." : "⚠️ ما كدرت أفتح الملف"); }
+      const P = k === "unlock" ? await pdfLib() : null, outDoc = P ? await P.PDFDocument.create() : null, n = Math.min(doc.numPages, 60);
+      for (let i = 1; i <= n; i++) {
+        say(`⏳ صفحة ${i} من ${n}…`);
+        const pg = await doc.getPage(i), vp = pg.getViewport({ scale: 2 }), c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height;
+        await pg.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+        if (outDoc) { const jpg = await outDoc.embedJpg(await (await fetch(c.toDataURL("image/jpeg", 0.9))).arrayBuffer()); const p2 = outDoc.addPage([vp.width / 2, vp.height / 2]); p2.drawImage(jpg, { x: 0, y: 0, width: vp.width / 2, height: vp.height / 2 }); }
+        else { const b = await new Promise(r => c.toBlob(r, "image/jpeg", 0.92)); save(b, `${baseName(f)}-${i}.jpg`); await new Promise(r => setTimeout(r, 350)); }
+      }
+      if (outDoc) { save(new Blob([await outDoc.save()], { type: "application/pdf" }), baseName(f) + "-مفتوح.pdf"); return say("✅ انفتح القفل. الملف الجديد يفتح بدون رمز."); }
+      return say(`✅ نزلت ${n} صورة${doc.numPages > 60 ? " (أول ٦٠ صفحة)" : ""}.`);
+    }
+    if (k === "merge") {
+      if (files.length < 2) return say("⚠️ اختار ملفين أو أكثر سوية.");
+      const P = await pdfLib(), doc = await P.PDFDocument.create();
+      for (const x of files) { const src = await P.PDFDocument.load(await x.arrayBuffer(), { ignoreEncryption: true }); (await doc.copyPages(src, src.getPageIndices())).forEach(p => doc.addPage(p)); }
+      save(new Blob([await doc.save()], { type: "application/pdf" }), "مدموج-YAR.pdf"); return say(`✅ ${files.length} ملفات صارت ملف واحد.`);
+    }
+    if (k === "split") {
+      const P = await pdfLib(), src = await P.PDFDocument.load(await f.arrayBuffer(), { ignoreEncryption: true }), tot = src.getPageCount();
+      const ans = prompt(`الملف بيه ${tot} صفحة. اكتب الصفحات اللي تريدها، مثلاً: 1-3, 5`); if (!ans) return say("");
+      const idx = [...new Set(ans.split(/[,،\s]+/).flatMap(r => { const [a, b] = r.split("-").map(Number); return b ? Array.from({ length: Math.max(0, b - a + 1) }, (_, j) => a + j) : [a]; }))].filter(x => x >= 1 && x <= tot).map(x => x - 1);
+      if (!idx.length) return say("⚠️ أرقام الصفحات غلط.");
+      const doc = await P.PDFDocument.create(); (await doc.copyPages(src, idx)).forEach(p => doc.addPage(p));
+      save(new Blob([await doc.save()], { type: "application/pdf" }), `${baseName(f)}-صفحات.pdf`); return say(`✅ طلعت ${idx.length} صفحة بملف جديد.`);
+    }
+    if (k === "any2text") {
+      const t = (await fileToText(f)).trim();
+      if (!t) return say("⚠️ ما بيه نص مكتوب (يمكن صور ممسوحة). ارفعه ليار بالمحادثة ويقراه.");
+      save(new Blob([t], { type: "text/plain;charset=utf-8" }), baseName(f) + ".txt"); return say(`✅ طلع النص (${t.length.toLocaleString("ar")} حرف).`);
+    }
+  } catch (e) { console.error(e); logErr(e?.message || e, "filetool " + k); say("⚠️ صار خلل بالتحويل. جرّب ملف ثاني أو گلي شنو صار."); }
 }
 async function showLibrary(msg){
   const { data: docs } = await sb.from("user_docs").select("id,name,chars,created_at").order("created_at", { ascending: false });
@@ -935,10 +1063,25 @@ $("iqBtn").onclick = () => showGuide();
 $("skillBtn").onclick = () => showSkills();
 $("fileIn").onchange = async () => {
   for (const f of [...$("fileIn").files].slice(0, 4 - ATT.length)) {
-    if (f.size > 4 * 1024 * 1024) { alertBox(`الملف «${f.name}» أكبر من ٤ ميگا`); continue; }
-    const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(",")[1]); fr.readAsDataURL(f); });
-    ATT.push({ name: f.name, mime: f.type || "application/octet-stream", data });
+    const n = f.name.toLowerCase(), isImg = (f.type||"").startsWith("image/"), isPdf = n.endsWith(".pdf");
+    if (f.size > 25 * 1024 * 1024) { alertBox(`الملف «${f.name}» أكبر من ٢٥ ميگا`); continue; }
+    if (isImg && f.size > 6 * 1024 * 1024) { alertBox(`الصورة «${f.name}» أكبر من ٦ ميگا`); continue; }
+    $("remain").textContent = `⏳ يقرا «${f.name}»… ·`;
+    const b64 = () => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(",")[1]); fr.readAsDataURL(f); });
+    try {
+      if (isImg) ATT.push({ name: f.name, mime: f.type, data: await b64() });
+      else {
+        // نطلّع النص بالموبايل نفسه، حتى أي عقل يقرا الملف. والـPDF الصغير ينرسل هم كامل (يفيد بالملفات المصوّرة)
+        let text = ""; try { text = (await fileToText(f)).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim(); } catch (e) { console.warn(e); }
+        const item = { name: f.name, mime: isPdf ? "application/pdf" : "text/plain", text: text.slice(0, 60000) };
+        if (isPdf && f.size <= 8 * 1024 * 1024) item.data = await b64();
+        if (!item.text && !item.data) { alertBox(`ما كدرت أقرا «${f.name}»`); continue; }
+        if (text.length > 60000) alertBox(`«${f.name}» طويل هواية، يار راح يقرا أول جزء منه`);
+        ATT.push(item);
+      }
+    } catch { alertBox(`ما كدرت أقرا «${f.name}»`); }
   }
+  if (!$("remain").textContent.startsWith("⚠️")) $("remain").textContent = "";
   $("fileIn").value = ""; renderAtt(); saveAtt();
 };
 function saveAtt(){ try { sessionStorage.setItem("yar_att", JSON.stringify(ATT)); } catch { try { sessionStorage.removeItem("yar_att"); } catch {} } }
@@ -1211,6 +1354,7 @@ const dateAr = d => new Date(d).toLocaleDateString("ar-IQ", { year:"numeric", mo
 function openModal(html){ $("modalBody").innerHTML = html; $("overlay").classList.add("show"); }
 function closeModal(){ $("overlay").classList.remove("show"); }
 $("closeModal").onclick = closeModal;
+$("ftBtn").onclick = showFileTools;
 $("overlay").onclick = e => { if (e.target.id === "overlay") closeModal(); };
 
 async function loadAccount(){
