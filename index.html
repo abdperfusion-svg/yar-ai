@@ -64,6 +64,7 @@ aside{width:272px;background:var(--side);display:flex;flex-direction:column;min-
 .exq .opt{display:block;padding:7px 10px;border-radius:10px;margin:4px 0;cursor:pointer;border:1px solid transparent}.exq .opt:hover{border-color:#2f6bff55}
 .exq textarea{width:100%;box-sizing:border-box;border-radius:10px;padding:8px;font:inherit;background:var(--panel2);color:var(--text);border:1px solid var(--line,#333)}
 .exq.ok{outline:2px solid #22c55e55}.exq.bad{outline:2px solid #ef444455}.exq .opt.right{background:#22c55e22;border-color:#22c55e}
+.exq summary{cursor:pointer;line-height:1.8}.exq ul{margin:6px 18px}
 .exq .why{margin-top:6px;font-size:13.5px;color:var(--muted)}.exsend{margin-top:10px}.exscore{margin-top:10px;font-weight:700}.ftb:hover{border-color:#2f6bff}
 .me{border-top:1px solid var(--line);padding:10px;position:relative}
 .me-btn{width:100%;display:flex;align-items:center;gap:10px;background:transparent;border:0;padding:8px;border-radius:12px;text-align:right}
@@ -324,7 +325,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
               <button type="button" class="catchip" id="micBtn">🎤 احچي بدل الكتابة</button>
               <button type="button" class="catchip" id="callBtn">📞 مكالمة ويا يار</button>
               <button type="button" class="catchip" id="libBtn">📚 مكتبتي</button>
-              <button type="button" class="catchip" id="iqBtn">🇮🇶 دليل العراق</button><button type="button" class="catchip" id="examBtn">📝 امتحني</button><button type="button" class="catchip" id="ftBtn">📁 أدوات الملفات</button>
+              <button type="button" class="catchip" id="iqBtn">🇮🇶 دليل العراق</button><button type="button" class="catchip" id="examBtn">📝 امتحني</button><button type="button" class="catchip" id="semBtn">🎤 سيمينار</button><button type="button" class="catchip" id="ftBtn">📁 أدوات الملفات</button>
               <div class="pm-sep"></div>
               <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span class="pm-sub">الفئة ▾</span>
                 <div class="catmenu" id="catMenu"></div></button>
@@ -375,6 +376,7 @@ const STARTERS = [
   ["📄 سيرة ذاتية", "سويلي سيرة ذاتية احترافية جاهزة للطباعة. اسألني عن معلوماتي وحدة وحدة"],
   ["🌐 ترجمة رسمية", "ترجملي هذا النص ترجمة رسمية للإنكليزي بتنسيق وثيقة: "],
   ["💰 حسب ميزانيتي", "آني عامل بناء، عندي مليون ونص دينار. شنو أحسن عدّة أشتريها حتى أشتغل لحسابي؟ رتبها حسب الأهم"],
+  ["🎤 سيمينار", "🎤 سيمينار: ارتفاع ضغط الدم — عدد الشرائح: 8 — اللغة: العربي\nرؤوس النقاط:\nالتعريف\nالأسباب\nالأعراض\nالتشخيص\nالعلاج ودور الممرض"],
   ["📝 امتحني", "📝 امتحان: 10 أسئلة — النوع: مخلوط — الصعوبة: متوسط — اللغة: العربي — الموضوع: جهاز الدوران والقلب"],
   ["🔧 حساب أسطة", "آني أسطة كاشي، عندي غرفة ٤ × ٥ متر. احسبلي كم متر كاشي وكم كيس سمنت ورمل أحتاج، واكتبلي قائمة حساب للزبون بالدينار"],
 ];
@@ -478,6 +480,7 @@ function addCopy(d, text){
   });
   addBuilder(d, text);
   addExam(d, text);
+  addSlides(d, text);
 }
 
 /* ===== امتحني: يار يسوي امتحان من محاضرتك، ويصلّحه، وينطيك درجتك ونصيحة ===== */
@@ -547,6 +550,120 @@ function addExam(d, text){
     $("input").value = `📝 صحح امتحاني «${ex.title || "امتحان"}» (الأسئلة الموضوعية: ${auto} من ${autoMax} صح):\n\n${lines.join("\n\n")}`;
     send();
   };
+}
+/* ===== سيمينار: رؤوس نقاط ← برزنتيشن باوربوينت احترافي ويا صور للموضوع ===== */
+const SEM_THEMES = {
+  blue:  { name: "أزرق أكاديمي", bg: "F8FAFC", primary: "1E3A8A", accent: "3B82F6", text: "1F2937", soft: "DBEAFE" },
+  green: { name: "أخضر طبي",     bg: "F7FBF9", primary: "065F46", accent: "10B981", text: "1F2937", soft: "D1FAE5" },
+  dark:  { name: "داكن عصري",    bg: "0F172A", primary: "F8FAFC", accent: "F59E0B", text: "E2E8F0", soft: "1E293B" },
+  warm:  { name: "دافئ أنيق",     bg: "FFFBF5", primary: "7C2D12", accent: "EA580C", text: "292524", soft: "FFEDD5" },
+};
+async function linkedImageProvider(){
+  try { const { data } = await sb.from("user_connections").select("provider").in("provider", ["magnific", "higgsfield"]); return data?.find(x => x.provider === "magnific")?.provider || data?.[0]?.provider || null; } catch { return null; }
+}
+async function showSeminar(){
+  const pv = await linkedImageProvider();
+  openModal(`<h3>🎤 سيمينار احترافي</h3><div class="sub">اكتب موضوعك ورؤوس النقاط، ويار يكتب الشرائح والشرح اللي تگوله، ويصممها بالباوربوينت ويا صور للموضوع.</div>
+    <input id="smTopic" placeholder="الموضوع، مثلاً: Heart Failure / ارتفاع ضغط الدم">
+    <textarea id="smPts" rows="5" placeholder="رؤوس النقاط (كل نقطة بسطر)، مثلاً:\nالتعريف\nالأسباب\nالأعراض\nالتشخيص\nالعلاج والتمريض"></textarea>
+    <div class="sub">${ATT.length ? `📎 راح يستخدم الملف المرفوع أيضاً: ${ATT.map(f => esc(f.name)).join("، ")}` : "💡 تكدر ترفع المحاضرة من زر + قبل ما تفتح هاي، ويار ياخذ منها."}</div>
+    <label class="sub">عدد الشرائح</label><select id="smN"><option>6</option><option selected>8</option><option>10</option><option>12</option><option>15</option></select>
+    <label class="sub">اللغة</label><select id="smLang"><option value="نفس لغة النقاط والمادة">نفس لغة المادة</option><option value="الإنكليزي">إنكليزي</option><option value="العربي">عربي</option><option value="الكردي">كردي</option></select>
+    <div class="sub" style="margin-top:10px">${pv ? `✅ الصور راح تنرسم من حسابك بـ${pv === "magnific" ? "ماجنيفيك" : "Higgsfield"} (من رصيدك هناك).` : `💡 حتى تطلع الصور احترافية كلش، اربط حسابك بماجنيفيك (بيه صور مجانية يومية) من «🔗 حساباتي المربوطة». هسة يار يرسمها بالرسام المجاني. <button class="no" id="smLink" style="width:auto;padding:4px 10px">🔗 اربط هسة</button>`}</div>
+    <button class="primary" id="smGo" style="margin-top:12px">✍️ اكتبلي الشرائح</button>`);
+  $("smLink")?.addEventListener("click", () => showConnections());
+  $("smGo").onclick = () => {
+    const t = $("smTopic").value.trim(), pts = $("smPts").value.trim();
+    if (!t && !pts && !ATT.length) return alertBox("اكتب الموضوع أو النقاط");
+    $("input").value = `🎤 سيمينار: ${t || "من الملف المرفوع"} — عدد الشرائح: ${$("smN").value} — اللغة: ${$("smLang").value}${pts ? `\nرؤوس النقاط:\n${pts}` : ""}`;
+    closeModal(); send();
+  };
+}
+function slidesOf(text){
+  const m = text.match(/```slides\s*([\s\S]*?)```/i) || text.match(/```json\s*(\{[\s\S]*?"slides"[\s\S]*?)```/i);
+  if (!m) return null;
+  try { const j = JSON.parse(m[1]); return Array.isArray(j.slides) && j.slides.length ? j : null; } catch { return null; }
+}
+function addSlides(d, text){
+  const sd = slidesOf(text); if (!sd) return;
+  const body = d.querySelector(".body"); if (!body) return;
+  body.querySelectorAll("pre").forEach(p => { if (/"slides"/.test(p.innerText)) p.remove(); });
+  const box = document.createElement("div"); box.className = "exam";
+  box.innerHTML = `<div class="exh">🎤 ${esc(sd.title || "سيمينار")} <span>${sd.slides.length.toLocaleString("ar-IQ")} شريحة</span></div>
+    ${sd.slides.map((sl, i) => `<details class="exq"><summary><b>${(i + 1).toLocaleString("ar-IQ")}.</b> ${esc(sl.title || "")}</summary><ul>${(sl.bullets || []).map(b => `<li>${esc(b)}</li>`).join("")}</ul>${sl.notes ? `<div class="why">🗣️ شنو تگول: ${esc(sl.notes)}</div>` : ""}</details>`).join("")}
+    <label class="sub">التصميم</label><select class="smTheme">${Object.entries(SEM_THEMES).map(([k, t]) => `<option value="${k}">${t.name}</option>`).join("")}</select>
+    <label class="sub">الصور</label><select class="smImgs"><option value="0">بدون صور (أسرع)</option><option value="3">٣ صور</option><option value="6" selected>٦ صور</option></select>
+    <button class="primary smMake" style="margin-top:10px">🎨 صمّم البرزنتيشن (PowerPoint)</button><div class="sub smOut"></div>`;
+  body.appendChild(box);
+  box.querySelector(".smMake").onclick = () => buildSeminar(sd, box.querySelector(".smTheme").value, +box.querySelector(".smImgs").value, box.querySelector(".smOut"), box.querySelector(".smMake"));
+}
+const toDataURL = (blob) => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+async function semImage(prompt, pv){
+  const p = `${prompt}. professional presentation photo, clean composition, soft light, high quality. no text, no letters, no watermark`;
+  try {
+    if (pv) {
+      const { data: { session } } = await sb.auth.getSession();
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/mcp-link`, { method: "POST", headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ action: "generate", provider: pv, prompt: p, aspect: "16:9" }) });
+      const j = await r.json().catch(() => ({}));
+      if (j.image) { const f = await fetch(j.image); if (f.ok) return await toDataURL(await f.blob()); }
+    }
+    // الرسام المجاني
+    const f = await fetch(`https://image.pollinations.ai/prompt/${encodeURIComponent(p.slice(0, 700))}?width=1280&height=720&nologo=true&model=flux&referrer=yar-ai&seed=${Math.floor(Math.random() * 1e6)}`);
+    if (f.ok && (f.headers.get("content-type") || "").startsWith("image/")) return await toDataURL(await f.blob());
+  } catch (e) { console.warn("sem img", e); }
+  return null;
+}
+async function buildSeminar(sd, themeKey, nImg, out, btn){
+  const T = SEM_THEMES[themeKey] || SEM_THEMES.blue, say = (m) => out.innerHTML = m;
+  btn.disabled = true;
+  try {
+    const rtl = (sd.lang || "") === "ar" || /[؀-ۿ]/.test((sd.title || "") + (sd.slides[0]?.title || ""));
+    const base = { fontFace: rtl ? "Arial" : "Calibri", rtlMode: rtl, align: rtl ? "right" : "left" };
+    // الصور: الغلاف + الشرائح الأولى
+    const imgs = {}; const pv = nImg ? await linkedImageProvider() : null;
+    const want = nImg ? [-1, ...sd.slides.map((_, i) => i).filter(i => sd.slides[i].image)].slice(0, nImg) : [];
+    for (const [k, i] of want.entries()) {
+      say(`🎨 يرسم الصورة ${(k + 1).toLocaleString("ar-IQ")} من ${want.length.toLocaleString("ar-IQ")}${pv ? " (من حسابك)" : ""}…`);
+      imgs[i] = await semImage(i === -1 ? (sd.cover_image || sd.slides[0]?.image || sd.title) : sd.slides[i].image, pv);
+    }
+    say("📐 يصمم الشرائح…");
+    const { default: PptxGenJS } = await import("https://esm.sh/pptxgenjs@3.12.0");
+    const pp = new PptxGenJS(); pp.layout = "LAYOUT_WIDE"; pp.rtlMode = rtl; pp.title = sd.title || "Seminar";
+    const W = 13.33, H = 7.5, foot = (sl, n) => {
+      sl.addText(`صُنع بواسطة YAR AI${n ? "  ·  " + n : ""}`, { ...base, x: 0.5, y: H - 0.42, w: W - 1, h: 0.3, fontSize: 9, color: themeKey === "dark" ? "94A3B8" : "94A3B8", align: rtl ? "left" : "right" });
+    };
+    // الغلاف
+    const cv = pp.addSlide(); cv.background = { color: themeKey === "dark" ? T.bg : T.primary };
+    if (imgs[-1]) { cv.addImage({ data: imgs[-1], x: 0, y: 0, w: W, h: H, sizing: { type: "cover", w: W, h: H } }); cv.addShape(pp.ShapeType.rect, { x: 0, y: 0, w: W, h: H, fill: { color: "000000", transparency: 45 } }); }
+    cv.addShape(pp.ShapeType.rect, { x: rtl ? W - 0.9 : 0.6, y: 2.35, w: 0.12, h: 2.2, fill: { color: T.accent } });
+    cv.addText(sd.title || "", { ...base, x: 0.9, y: 2.2, w: W - 1.8, h: 1.6, fontSize: 40, bold: true, color: "FFFFFF", valign: "bottom" });
+    if (sd.subtitle) cv.addText(sd.subtitle, { ...base, x: 0.9, y: 3.85, w: W - 1.8, h: 0.8, fontSize: 20, color: "E2E8F0" });
+    foot(cv);
+    sd.slides.forEach((s, i) => {
+      const sl = pp.addSlide(); sl.background = { color: T.bg };
+      const img = imgs[i], imgW = 5.3, side = (i % 2 === 0) !== rtl; // نبدّل جهة الصورة كل شريحة
+      const tx = img ? (side ? 0.6 : imgW + 0.4) : 0.8, tw = img ? W - imgW - 1.2 : W - 1.6;
+      if (img) sl.addImage({ data: img, x: side ? W - imgW : 0, y: 0, w: imgW, h: H, sizing: { type: "cover", w: imgW, h: H } });
+      else sl.addShape(pp.ShapeType.rect, { x: rtl ? W - 0.25 : 0, y: 0, w: 0.25, h: H, fill: { color: T.accent } });
+      sl.addShape(pp.ShapeType.ellipse, { x: rtl ? tx + tw - 0.6 : tx, y: 0.45, w: 0.6, h: 0.6, fill: { color: T.accent } });
+      sl.addText(String(i + 1), { x: rtl ? tx + tw - 0.6 : tx, y: 0.45, w: 0.6, h: 0.6, fontSize: 16, bold: true, color: "FFFFFF", align: "center", valign: "middle", fontFace: "Arial" });
+      sl.addText(s.title || "", { ...base, x: rtl ? tx : tx + 0.8, y: 0.35, w: tw - 0.8, h: 0.85, fontSize: 28, bold: true, color: T.primary, valign: "middle" });
+      sl.addShape(pp.ShapeType.rect, { x: rtl ? tx + tw - 2.2 : tx, y: 1.3, w: 2.2, h: 0.06, fill: { color: T.accent } });
+      const bl = (s.bullets || []).slice(0, 6);
+      sl.addText(bl.map(b => ({ text: b, options: { bullet: { code: "25CF", indent: 22 }, breakLine: true } })), { ...base, x: tx, y: 1.6, w: tw, h: H - 2.4, fontSize: bl.length > 4 ? 18 : 20, color: T.text, valign: "top", paraSpaceAfter: 12 });
+      if (s.notes) sl.addNotes(s.notes);
+      foot(sl, i + 2);
+    });
+    const end = pp.addSlide(); end.background = { color: themeKey === "dark" ? T.soft : T.primary };
+    end.addText(rtl ? "شكراً لاستماعكم" : "Thank You", { ...base, align: "center", x: 0, y: 2.4, w: W, h: 1.2, fontSize: 44, bold: true, color: "FFFFFF" });
+    end.addText(rtl ? "أسئلتكم؟" : "Questions?", { ...base, align: "center", x: 0, y: 3.7, w: W, h: 0.8, fontSize: 24, color: "E2E8F0" });
+    foot(end);
+    const name = (sd.title || "seminar").replace(/[\\/:*?"<>|]/g, "").slice(0, 60);
+    save(await pp.write({ outputType: "blob" }), `${name}.pptx`);
+    const got = Object.values(imgs).filter(Boolean).length;
+    say(`✅ نزل البرزنتيشن (${(sd.slides.length + 2).toLocaleString("ar-IQ")} شريحة${nImg ? `، ${got.toLocaleString("ar-IQ")} صور` : ""}). الشرح اللي تگوله موجود بـ«ملاحظات المتحدث» تحت كل شريحة.${nImg && got < want.length ? " بعض الصور ما طلعت لأن الرسام مزدحم، جرّب مرة ثانية إذا تريدها." : ""}${!pv && nImg ? " 💡 اربط ماجنيفيك حتى الصور تطلع أحلى." : ""}`);
+  } catch (e) { console.error(e); logErr(e?.message || e, "seminar"); say("⚠️ صار خلل بالتصميم، جرّب مرة ثانية."); }
+  btn.disabled = false;
 }
 /* ===== البنّاء: تشغيل ونشر المواقع والبرامج اللي يسويها يار ===== */
 function htmlOf(text){
@@ -1473,6 +1590,7 @@ function closeModal(){ $("overlay").classList.remove("show"); }
 $("closeModal").onclick = closeModal;
 $("ftBtn").onclick = showFileTools;
 $("examBtn").onclick = showExam;
+$("semBtn").onclick = showSeminar;
 $("overlay").onclick = e => { if (e.target.id === "overlay") closeModal(); };
 
 async function loadAccount(){
