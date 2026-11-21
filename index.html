@@ -311,6 +311,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
               <button type="button" class="catchip" id="micBtn">🎤 احچي بدل الكتابة</button>
               <button type="button" class="catchip" id="callBtn">📞 مكالمة ويا يار</button>
               <button type="button" class="catchip" id="libBtn">📚 مكتبتي</button>
+              <button type="button" class="catchip" id="iqBtn">🇮🇶 دليل العراق</button>
               <div class="pm-sep"></div>
               <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span class="pm-sub">الفئة ▾</span>
                 <div class="catmenu" id="catMenu"></div></button>
@@ -848,6 +849,17 @@ function chunkText(t){
   while (i < clean.length && out.length < 600) { let end = Math.min(clean.length, i + 1200); const cut = clean.lastIndexOf("\n", end); if (cut > i + 600) end = cut; out.push(clean.slice(i, end).trim()); i = end - 120 > i ? end - 120 : end; }
   return out.filter(x => x.length > 30);
 }
+/* ===== دليل العراق: روابط رسمية موثوقة للمعاملات والشغل ===== */
+async function showGuide(){
+  const { data: g } = await sb.from("iraq_guide").select("cat,icon,title,body,url").order("pos");
+  const cats = [...new Set((g || []).map(x => x.cat))];
+  openModal(`<h3>🇮🇶 دليل العراق</h3><div class="sub">روابط رسمية موثوقة للمعاملات والدراسة والشغل. اضغط «اسأل يار» حتى يدوّرلك آخر المعلومات ويشرحها خطوة بخطوة.</div>
+    ${cats.map(c => `<h4 style="margin:14px 0 6px">${esc(c)}</h4>` + g.filter(x => x.cat === c).map((x, i) => `<div class="row"><div class="t"><span class="em">${x.icon} ${esc(x.title)}</span></div>
+      <div style="color:var(--muted);margin:4px 0">${esc(x.body)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener"><button style="width:auto;padding:6px 12px">🔗 الموقع الرسمي</button></a>` : ""}<button class="no" data-ask="${esc(x.title)}" style="width:auto;padding:6px 12px">💬 اسأل يار</button></div></div>`).join("")).join("")}
+    <div class="sub">⚠️ الشروط والرسوم تتغير، فيار يبحث بآخر المعلومات. المواقع الحكومية الرسمية تنتهي بـ gov.iq.</div>`);
+  $("modalBody").querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { closeModal(); const q = $("input"); q.value = `اشرحلي خطوة بخطوة وبآخر المعلومات: ${b.dataset.ask}`; q.focus(); });
+}
 async function showLibrary(msg){
   const { data: docs } = await sb.from("user_docs").select("id,name,chars,created_at").order("created_at", { ascending: false });
   openModal(`<h3>📚 مكتبتي</h3><div class="sub">ارفع ملفاتك (PDF، وورد، نص)، ويار يجاوب منها لمن تسأله. الملفات إلك بس، محد غيرك يشوفها.</div>
@@ -878,6 +890,7 @@ async function showLibrary(msg){
   };
 }
 $("libBtn").onclick = () => showLibrary();
+$("iqBtn").onclick = () => showGuide();
 $("skillBtn").onclick = () => showSkills();
 $("fileIn").onchange = async () => {
   for (const f of [...$("fileIn").files].slice(0, 4 - ATT.length)) {
@@ -1602,7 +1615,7 @@ const { data: { session } } = await sb.auth.getSession(); render(session);
 /* ===== زر + : كل الخصائص بقائمة وحدة ===== */
 $("plusBtn").onclick = e => { e.stopPropagation(); const o = $("plusMenu").classList.toggle("open"); $("plusBtn").classList.toggle("open", o); };
 document.addEventListener("click", e => { if (!e.target.closest(".plusWrap")) { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); } });
-["skillBtn","attBtn","imgBtn","resBtn","thinkBtn","buildBtn","micBtn","callBtn","libBtn"].forEach(id => $(id).addEventListener("click", () => { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); setTimeout(refreshActive, 0); }));
+["skillBtn","attBtn","imgBtn","resBtn","thinkBtn","buildBtn","micBtn","callBtn","libBtn","iqBtn"].forEach(id => $(id).addEventListener("click", () => { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); setTimeout(refreshActive, 0); }));
 function refreshActive(){
   const items = [];
   if (curCat !== "general") items.push([$("catLabel").textContent, () => { curCat = "general"; setCatLabel(); if (!convId) welcome(); }]);
