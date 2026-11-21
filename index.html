@@ -359,6 +359,8 @@ const STARTERS = [
   ["💼 أريد شغل", "آني خريج وما لگيت تعيين. سويلي سيرة ذاتية، وگلي ٥ طرق أطلّع بيها فلوس من البيت بالعراق"],
   ["🏛️ معاملة حكومية", "شنو الأوراق والخطوات حتى أطلع جواز سفر بالعراق؟ اشرحلي خطوة بخطوة"],
   ["☀️ منظومة شمسية", "عندي ثلاجة ومبردة وتلفزيون و٥ لمبات. شكد ألواح وبطاريات أحتاج للطاقة الشمسية، وشكد تكلّف تقريباً؟"],
+  ["📄 سيرة ذاتية", "سويلي سيرة ذاتية احترافية جاهزة للطباعة. اسألني عن معلوماتي وحدة وحدة"],
+  ["🌐 ترجمة رسمية", "ترجملي هذا النص ترجمة رسمية للإنكليزي بتنسيق وثيقة: "],
   ["💰 حسب ميزانيتي", "آني عامل بناء، عندي مليون ونص دينار. شنو أحسن عدّة أشتريها حتى أشتغل لحسابي؟ رتبها حسب الأهم"],
   ["🔧 حساب أسطة", "آني أسطة كاشي، عندي غرفة ٤ × ٥ متر. احسبلي كم متر كاشي وكم كيس سمنت ورمل أحتاج، واكتبلي قائمة حساب للزبون بالدينار"],
 ];
@@ -427,7 +429,8 @@ function addCopy(d, text){
   t.querySelector(".spk").onclick = () => speak(text, t.querySelector(".spk"));
   cp.onclick = async () => { try { await navigator.clipboard.writeText(text); cp.textContent = "✓ انسخ"; setTimeout(()=>cp.textContent="⧉ نسخ",1500); } catch {} };
   const im = text.match(/!\[[^\]]*\]\((\S+?)\)/);
-  if (im) { const a = document.createElement("a"); a.href = im[1]; a.target = "_blank"; a.rel = "noopener"; a.innerHTML = `<button>🖼️ افتح الصورة</button>`; t.appendChild(a); }
+  if (im) { const a = document.createElement("a"); a.href = im[1]; a.target = "_blank"; a.rel = "noopener"; a.innerHTML = `<button>🖼️ افتح الصورة</button>`; t.appendChild(a);
+    const rb = document.createElement("button"); rb.textContent = "✂️ شيل الخلفية"; rb.onclick = () => removeBg(im[1], rb, d); t.appendChild(rb); }
   // تقييم الجواب: يساعدنا نعرف وين يار يغلط
   const fb = document.createElement("span"); fb.className = "fb";
   fb.innerHTML = `<button title="جواب زين">👍</button><button title="جواب مو زين">👎</button>`;
@@ -515,6 +518,22 @@ function addBuilder(d, text){
     bar.after(box);
   };
   d.querySelector(".col").insertBefore(bar, d.querySelector(".col .tools"));
+}
+
+/* ===== حذف الخلفية: يشتغل على جهاز المستخدم، مجاني تماماً ===== */
+let BG_LIB = null;
+async function removeBg(url, btn, d){
+  btn.disabled = true; btn.textContent = "✂️ يحمّل الأداة (أول مرة بس)…";
+  try {
+    BG_LIB = BG_LIB || await import("https://cdn.jsdelivr.net/npm/@imgly/background-removal@1/+esm");
+    btn.textContent = "✂️ يشيل الخلفية…";
+    const blob = await BG_LIB.removeBackground(url, { progress: (k, c, t) => { if (t) btn.textContent = `✂️ يشيل الخلفية… ${Math.round(c / t * 100).toLocaleString("ar-IQ")}٪`; } });
+    const u = URL.createObjectURL(blob);
+    const box = document.createElement("div"); box.style.cssText = "margin-top:10px";
+    box.innerHTML = `<div style="background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0/20px 20px;border-radius:14px;display:inline-block;max-width:100%"><img src="${u}" style="max-width:100%;max-height:420px;display:block"></div><br><a href="${u}" download="yar-no-bg.png" class="chip" style="display:inline-block;margin-top:8px;padding:8px 14px;border-radius:20px;border:1px solid var(--line)">⬇️ نزّل بدون خلفية (PNG)</a>`;
+    d.querySelector(".body").appendChild(box);
+    btn.textContent = "✓ انشالت الخلفية";
+  } catch (e) { console.error(e); btn.disabled = false; btn.textContent = "ما زبط، جرّب مرة ثانية"; }
 }
 
 /* ===== تحويل الجواب لـ PDF (عن طريق طباعة المتصفح: عربي نظيف ومجاني) ===== */
