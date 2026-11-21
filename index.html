@@ -324,7 +324,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
               <button type="button" class="catchip" id="buildBtn">🛠️ ابنِ موقع أو برنامج</button>
               <button type="button" class="catchip" id="micBtn">🎤 احچي بدل الكتابة</button>
               <button type="button" class="catchip" id="callBtn">📞 مكالمة ويا يار</button>
-              <button type="button" class="catchip" id="libBtn">📚 مكتبتي</button><button type="button" class="catchip" id="clsBtn">👥 صفوفي</button>
+              <button type="button" class="catchip" id="libBtn">📚 مكتبتي</button><button type="button" class="catchip" id="clsBtn">👥 مجموعاتي</button>
               <button type="button" class="catchip" id="iqBtn">🇮🇶 دليل العراق</button><button type="button" class="catchip" id="examBtn">📝 امتحني</button><button type="button" class="catchip" id="semBtn">🎤 سيمينار</button><button type="button" class="catchip" id="ftBtn">📁 أدوات الملفات</button>
               <div class="pm-sep"></div>
               <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span class="pm-sub">الفئة ▾</span>
@@ -1139,16 +1139,16 @@ function chunkText(t, max = 600){
 async function showClasses(msg){
   const { data: { user } } = await sb.auth.getUser();
   const { data: cls } = await sb.from("classes").select("id,name,code,owner").order("created_at", { ascending: false });
-  openModal(`<h3>👥 صفوفي</h3><div class="sub">صف دراسي مشترك: الممثل يسوي الصف ويدز الرمز لزملائه، وكل واحد يدخل بحسابه. المحاضرات تبقى بالصف للكل، ويار يجاوب ويامتحن كل واحد منها.</div>
+  openModal(`<h3>👥 مجموعاتي</h3><div class="sub">مجموعة مشتركة لصف دراسي أو لموظفين بمحل أو صيدلية: المسؤول يسويها ويدز الرمز، وكل واحد يدخل بحسابه. الملفات (محاضرات، قوائم أسعار، تعليمات الشغل) تبقى للكل، ويار يجاوب كل واحد منها.</div>
     <div class="msg" id="clsMsg">${msg || ""}</div>
-    ${(cls || []).map(c => `<div class="row" data-open="${c.id}" style="cursor:pointer"><div class="t"><span class="em">🎓 ${esc(c.name)}</span><span class="badge">${c.owner === user?.id ? "ممثل الصف" : "عضو"}</span></div><div style="color:var(--muted)">اضغط حتى تفتح الصف</div></div>`).join("") || '<div class="sub">لهسه ما عندك صفوف.</div>'}
-    <h4 style="margin:14px 0 6px">➕ ادخل صف بالرمز</h4><div style="display:flex;gap:8px"><input id="clsCode" placeholder="مثلاً AB12CD" style="text-transform:uppercase"><button class="primary" id="clsJoin" style="width:auto;padding:8px 16px">ادخل</button></div>
-    <h4 style="margin:14px 0 6px">🆕 سوّي صف جديد (للممثل)</h4><div style="display:flex;gap:8px"><input id="clsName" placeholder="مثلاً: تمريض المرحلة الثالثة - كركوك"><button class="primary" id="clsNew" style="width:auto;padding:8px 16px">سوّي</button></div>
-    <div class="sub">⭐ <b>باقة الصف</b>: ٢٥ ألف شهرياً لـ ٦ طلاب، كل واحد بحسابه ياخذ مميزات باقة الطلاب (يطلع على الواحد حدود ٤٢٠٠ دينار). يشترك بيها ممثل الصف. <button class="no" id="clsPlan" style="width:auto;padding:4px 10px">شوف الباقات</button></div>`);
+    ${(cls || []).map(c => `<div class="row" data-open="${c.id}" style="cursor:pointer"><div class="t"><span class="em">🎓 ${esc(c.name)}</span><span class="badge">${c.owner === user?.id ? "المسؤول" : "عضو"}</span></div><div style="color:var(--muted)">اضغط حتى تفتحها</div></div>`).join("") || '<div class="sub">لهسه ما عندك مجموعات.</div>'}
+    <h4 style="margin:14px 0 6px">➕ ادخل مجموعة بالرمز</h4><div style="display:flex;gap:8px"><input id="clsCode" placeholder="مثلاً AB12CD" style="text-transform:uppercase"><button class="primary" id="clsJoin" style="width:auto;padding:8px 16px">ادخل</button></div>
+    <h4 style="margin:14px 0 6px">🆕 سوّي مجموعة جديدة</h4><div style="display:flex;gap:8px"><input id="clsName" placeholder="مثلاً: تمريض المرحلة الثالثة، أو موظفين صيدلية ريحانة"><button class="primary" id="clsNew" style="width:auto;padding:8px 16px">سوّي</button></div>
+    <div class="sub">⭐ <b>باقات المجموعات</b> (يشترك بيها المسؤول، وكل واحد بحسابه):<br>🎓 طلاب ٣ بـ١٥ ألف · صف ٦ طلاب بـ٢٥ ألف<br>💼 فريق ٣ بـ٢٥ ألف · فريق ٦ بـ٤٥ ألف · فريق ١٠ بـ٧٠ ألف (مميزات البرو) <button class="no" id="clsPlan" style="width:auto;padding:4px 10px">شوف الباقات</button></div>`);
   $("modalBody").querySelectorAll("[data-open]").forEach(r => r.onclick = () => openClass(r.dataset.open));
   $("clsPlan").onclick = () => showPlans("class");
   $("clsJoin").onclick = async () => { const code = $("clsCode").value.trim(); if (!code) return; const { data, error } = await sb.rpc("join_class", { p_code: code }); if (error) return $("clsMsg").textContent = "⚠️ " + (error.message.includes("غلط") ? "الرمز غلط" : error.message); openClass(data.id, `✅ دخلت صف «${data.name}»`); };
-  $("clsNew").onclick = async () => { const n = $("clsName").value.trim(); if (n.length < 2) return; const { data, error } = await sb.rpc("create_class", { p_name: n }); if (error) return $("clsMsg").textContent = "⚠️ " + error.message; openClass(data.id, "✅ انسوى الصف. دز الرمز لزملائك"); };
+  $("clsNew").onclick = async () => { const n = $("clsName").value.trim(); if (n.length < 2) return; const { data, error } = await sb.rpc("create_class", { p_name: n }); if (error) return $("clsMsg").textContent = "⚠️ " + error.message; openClass(data.id, "✅ انسوت المجموعة. دز الرمز لجماعتك"); };
 }
 async function openClass(id, msg){
   const { data: { user } } = await sb.auth.getUser();
@@ -1158,30 +1158,30 @@ async function openClass(id, msg){
     sb.from("user_docs").select("id,name,chars,user_id,created_at").eq("class_id", id).order("created_at", { ascending: false }) ]);
   if (!c) return showClasses("⚠️ الصف مو موجود");
   const owner = c.owner === user?.id, link = location.origin + location.pathname + "?join=" + c.code;
-  const invite = `انضم لصفنا «${c.name}» على يار 🎓\nالرمز: ${c.code}\n${link}`;
+  const invite = `انضم لمجموعتنا «${c.name}» على يار 👥\nالرمز: ${c.code}\n${link}`;
   openModal(`<h3>🎓 ${esc(c.name)}</h3><div class="msg" id="clMsg">${msg || ""}</div>
-    <div class="row"><div class="t"><span class="em">🔑 رمز الصف: <b style="font-size:20px;letter-spacing:3px">${esc(c.code)}</b></span></div>
+    <div class="row"><div class="t"><span class="em">🔑 رمز المجموعة: <b style="font-size:20px;letter-spacing:3px">${esc(c.code)}</b></span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="no" id="clCopy" style="width:auto;padding:6px 12px">⧉ انسخ الدعوة</button><a href="https://wa.me/?text=${encodeURIComponent(invite)}" target="_blank" rel="noopener"><button class="no" style="width:auto;padding:6px 12px">💬 دزه بالواتساب</button></a></div></div>
-    <h4 style="margin:14px 0 6px">📚 محاضرات الصف (${(docs || []).length.toLocaleString("ar-IQ")})</h4>
-    <label class="primary" style="display:block;text-align:center;cursor:pointer">➕ ارفع محاضرة للصف<input type="file" id="clFile" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv" multiple hidden></label>
+    <h4 style="margin:14px 0 6px">📚 ملفات المجموعة (${(docs || []).length.toLocaleString("ar-IQ")})</h4>
+    <label class="primary" style="display:block;text-align:center;cursor:pointer">➕ ارفع ملف للمجموعة<input type="file" id="clFile" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv" multiple hidden></label>
     ${(docs || []).map(d => `<div class="row"><div class="t"><span class="em">📄 ${esc(d.name)}</span></div><div style="color:var(--muted)">${(d.chars || 0).toLocaleString("ar-IQ")} حرف · ${dateAr(d.created_at)}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
         <button class="no" data-ex="${d.id}" style="width:auto;padding:5px 10px">📝 امتحني منه</button>
         <button class="no" data-sum="${d.id}" style="width:auto;padding:5px 10px">✨ اختصره</button>
         <button class="no" data-sem="${d.id}" style="width:auto;padding:5px 10px">🎤 سيمينار منه</button>
         <button class="no" data-take="${d.id}" style="width:auto;padding:5px 10px">📥 خذه لمكتبتي</button>
-        ${owner || d.user_id === user?.id ? `<button class="no" data-del="${d.id}" style="width:auto;padding:5px 10px">🗑️</button>` : ""}</div></div>`).join("") || '<div class="sub">لهسه ما انرفعت محاضرات. ارفعوا المحاضرات هنا، وكل الصف يستفاد منها.</div>'}
-    <div class="sub">💬 بأي محادثة، اسأل يار عن المادة، وهو يجاوب من محاضرات الصف تلقائياً.</div>
+        ${owner || d.user_id === user?.id ? `<button class="no" data-del="${d.id}" style="width:auto;padding:5px 10px">🗑️</button>` : ""}</div></div>`).join("") || '<div class="sub">لهسه ما انرفعت ملفات. ارفعوا المحاضرات أو ملفات الشغل هنا، وكل المجموعة تستفاد منها.</div>'}
+    <div class="sub">💬 بأي محادثة، اسأل يار، وهو يجاوب من ملفات المجموعة تلقائياً.</div>
     <h4 style="margin:14px 0 6px">👥 الأعضاء (${(roster || []).length.toLocaleString("ar-IQ")})</h4>
-    ${(roster || []).map(m => `<div class="row"><div class="t"><span class="em">${m.role === "owner" ? "⭐" : "👤"} ${esc(m.name)}</span>${m.covered ? '<span class="badge">ضمن باقة الصف</span>' : ""}${owner && m.role !== "owner" ? `<button class="no" data-kick="${m.user_id}" style="width:auto;padding:3px 8px">إخراج</button>` : ""}</div></div>`).join("")}
-    ${owner ? `<div class="sub">⭐ اشترك بـ«باقة الصف» حتى أول ٦ أعضاء ياخذون مميزات باقة الطلاب. <button class="no" id="clPlan" style="width:auto;padding:4px 10px">اشترك</button></div>` : ""}
-    <div style="display:flex;gap:8px;margin-top:12px"><button class="no" id="clBack" style="width:auto;padding:6px 12px">→ رجوع</button>${owner ? `<button class="no" id="clDelete" style="width:auto;padding:6px 12px">🗑️ احذف الصف</button>` : `<button class="no" id="clLeave" style="width:auto;padding:6px 12px">🚪 اطلع من الصف</button>`}</div>`);
+    ${(roster || []).map(m => `<div class="row"><div class="t"><span class="em">${m.role === "owner" ? "⭐" : "👤"} ${esc(m.name)}</span>${m.covered ? '<span class="badge">ضمن الباقة</span>' : ""}${owner && m.role !== "owner" ? `<button class="no" data-kick="${m.user_id}" style="width:auto;padding:3px 8px">إخراج</button>` : ""}</div></div>`).join("")}
+    ${owner ? `<div class="sub">⭐ اشترك بباقة مجموعة (طلاب أو فريق) حتى الأعضاء ياخذون مميزاتها، كل واحد بحسابه. <button class="no" id="clPlan" style="width:auto;padding:4px 10px">اشترك</button></div>` : ""}
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="no" id="clBack" style="width:auto;padding:6px 12px">→ رجوع</button>${owner ? `<button class="no" id="clDelete" style="width:auto;padding:6px 12px">🗑️ احذف المجموعة</button>` : `<button class="no" id="clLeave" style="width:auto;padding:6px 12px">🚪 اطلع من المجموعة</button>`}</div>`);
   const say = (m) => $("clMsg").textContent = m;
   $("clBack").onclick = () => showClasses();
   $("clCopy").onclick = async () => { try { await navigator.clipboard.writeText(invite); say("✅ انسخت الدعوة"); } catch {} };
   $("clPlan")?.addEventListener("click", () => showPlans("class"));
-  $("clDelete")?.addEventListener("click", async () => { if (!confirm("تحذف الصف وكل محاضراته؟ ما يرجع.")) return; await sb.from("classes").delete().eq("id", id); showClasses("انحذف الصف"); });
-  $("clLeave")?.addEventListener("click", async () => { if (!confirm("تطلع من الصف؟ خذ المحاضرات اللي تريدها لمكتبتك أول.")) return; await sb.from("class_members").delete().eq("class_id", id).eq("user_id", user.id); showClasses("طلعت من الصف"); });
+  $("clDelete")?.addEventListener("click", async () => { if (!confirm("تحذف المجموعة وكل ملفاتها؟ ما يرجع.")) return; await sb.from("classes").delete().eq("id", id); showClasses("انحذفت المجموعة"); });
+  $("clLeave")?.addEventListener("click", async () => { if (!confirm("تطلع من المجموعة؟ خذ الملفات اللي تريدها لمكتبتك أول.")) return; await sb.from("class_members").delete().eq("class_id", id).eq("user_id", user.id); showClasses("طلعت من المجموعة"); });
   $("modalBody").querySelectorAll("[data-kick]").forEach(b => b.onclick = async () => { if (!confirm("تطلّع هذا العضو؟")) return; await sb.from("class_members").delete().eq("class_id", id).eq("user_id", b.dataset.kick); openClass(id, "انطلع"); });
   $("modalBody").querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { if (!confirm("تمسح هاي المحاضرة من الصف؟")) return; await sb.from("user_docs").delete().eq("id", b.dataset.del); openClass(id, "انمسحت"); });
   const docText = async (did) => { const { data } = await sb.from("doc_chunks").select("content").eq("doc_id", did).order("idx").limit(2000); return (data || []).map(x => x.content).join("\n\n"); };
@@ -1712,7 +1712,8 @@ function planFeatures(pl){
   if (pl.id === "free") f.push("يار سريع وبرو", "بحث عميق (يحسب ٣ رسائل)", "تصدير Word و PowerPoint و Excel");
   if (pl.id === "student") f.push("مراجعة ذاتية تقلل الأخطاء", "سمينارات وبحوث بمراجع حقيقية", "رفع ملفات PDF وصور");
   if (pl.id === "pro") f.push("مراجعة ذاتية تقلل الأخطاء", "صور Gemini الاحترافية", "💎 وضع خبير (Claude / Grok)");
-  if (pl.id === "class") f.push("👥 لـ ٦ طلاب، كل واحد بحسابه", "مميزات باقة الطلاب لكل واحد", "صف مشترك: محاضرات وامتحانات للكل");
+  if (pl.id === "class" || pl.id === "class3") f.push(`👥 لـ ${pl.seats || 6} طلاب، كل واحد بحسابه`, "مميزات باقة الطلاب لكل واحد", "صف مشترك: محاضرات وامتحانات للكل");
+  if (/^team/.test(pl.id)) f.push(`💼 لـ ${pl.seats} أشخاص (محل، صيدلية، شركة)`, "مميزات البرو لكل واحد بحسابه", "ملفات مشتركة: أسعار، تعليمات، عروض");
   if (pl.id === "business") f.push("💎 وضع خبير بلا حدود تقريباً", "أولوية بالميزات الجديدة", "دعم مباشر");
   return f;
 }
