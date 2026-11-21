@@ -1042,6 +1042,7 @@ async function send(){
           } catch (e) { console.error("overlay", e); }
           if (im) im.style.opacity = ""; document.getElementById("ovl")?.remove();
         }
+        if (data?.image && data.overlay?.kind !== "identity") addProVideoBtn(pending, data.image);
         if (data?.image && data.overlay?.kind !== "identity") addVideoBtn(pending, data.overlay?.kind === "poster" ? data.image : (data._final || data.image), data.overlay?.kind === "poster" ? data.overlay : null);
       }
       return;
@@ -1333,6 +1334,36 @@ function fitText(x, text, maxW, maxH){
   let size = Math.round(maxH);
   do { x.font = `900 ${size}px Cairo, sans-serif`; if (x.measureText(text).width <= maxW) break; size -= 2; } while (size > 14);
   return size;
+}
+// الفيديو الاحترافي (Higgsfield): يطلع زرّه بس إذا تفعّل من السيرفر
+let PROVIDEO = null;
+async function proVideoInfo(){ if (PROVIDEO) return PROVIDEO; try { const { data } = await sb.functions.invoke("video", { body: { action: "info" } }); PROVIDEO = data || { enabled: false }; } catch { PROVIDEO = { enabled: false }; } return PROVIDEO; }
+async function addProVideoBtn(pending, url){
+  const info = await proVideoInfo(); if (!info?.enabled) return;
+  const b = document.createElement("button"); b.className = "chip";
+  b.textContent = `🎬✨ فيديو احترافي بالذكاء (${(info.cost || 40).toLocaleString("ar-IQ")} نقطة)`;
+  b.style.cssText = "margin:10px 6px 0 0;padding:8px 14px;border-radius:20px;border:1px solid var(--a2);background:var(--panel)";
+  pending.querySelector(".body").appendChild(b);
+  b.onclick = async () => {
+    if (!confirm(`يار راح يحرّك الصورة لفيديو ٥ ثواني بالذكاء الاصطناعي، وينسحب ${info.cost || 40} نقطة. إذا فشل ترجعلك. نكمل؟`)) return;
+    b.disabled = true; b.textContent = "🎬 يبدي الفيديو…";
+    const { data, error } = await sb.functions.invoke("video", { body: { action: "start", image_url: url, conversation_id: convId } });
+    if (error || !data?.job_id) { let m = "ما بدا الفيديو"; try { m = (await error.context.json()).error || m; } catch {} b.disabled = false; b.textContent = m; return; }
+    showPoints(data.points);
+    for (let i = 0; i < 90; i++) {
+      await new Promise(r => setTimeout(r, 6000));
+      b.textContent = `🎬 يار يصوّر الفيديو… (${Math.round(i * 6 / 60).toLocaleString("ar-IQ")} دقيقة)`;
+      const r = await sb.functions.invoke("video", { body: { action: "status", job_id: data.job_id } });
+      const s = r.data || {};
+      if (s.status === "completed" && s.video) {
+        const box = document.createElement("div"); box.style.marginTop = "10px";
+        box.innerHTML = `<video src="${s.video}" controls playsinline loop style="width:100%;max-width:360px;border-radius:14px;display:block"></video><a href="${s.video}" target="_blank" rel="noopener" class="chip" style="display:inline-block;margin-top:8px;padding:8px 14px;border-radius:20px;border:1px solid var(--line)">⬇️ نزّل الفيديو</a>`;
+        b.replaceWith(box); return;
+      }
+      if (s.status === "failed") { b.textContent = s.error || "الفيديو ما زبط"; return; }
+    }
+    b.textContent = "الفيديو طوّل، راح يوصلك بالمحادثة من يخلص";
+  };
 }
 function addVideoBtn(pending, url, design){
   const b = document.createElement("button"); b.className = "chip"; b.textContent = "🎬 سوّيها فيديو (مجاني)";
