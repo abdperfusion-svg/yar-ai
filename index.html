@@ -303,6 +303,7 @@ footer.credit{text-align:center;font-size:11.5px;color:var(--dim);padding:2px 0 
               <button type="button" class="catchip" id="thinkBtn">🧠 فكّر بعمق</button>
               <button type="button" class="catchip" id="micBtn">🎤 احچي بدل الكتابة</button>
               <button type="button" class="catchip" id="callBtn">📞 مكالمة ويا يار</button>
+              <button type="button" class="catchip" id="libBtn">📚 مكتبتي</button>
               <div class="pm-sep"></div>
               <button type="button" class="catchip" id="catBtn"><span id="catLabel">💬 عام</span> <span class="pm-sub">الفئة ▾</span>
                 <div class="catmenu" id="catMenu"></div></button>
@@ -738,6 +739,59 @@ function startCall(){
 }
 function endCall(){ if (CALL?.rec) try { CALL.rec.abort(); } catch {} CALL = null; try { speechSynthesis.cancel(); } catch {} closeModal(); }
 $("callBtn").onclick = startCall;
+// ===== مكتبتي: المستخدم يرفع ملفاته، ويار يجاوب منها =====
+async function fileToText(f){
+  const n = f.name.toLowerCase();
+  if (n.endsWith(".pdf")) {
+    const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs";
+    const doc = await pdfjs.getDocument({ data: await f.arrayBuffer() }).promise;
+    let out = "";
+    for (let i = 1; i <= Math.min(doc.numPages, 300); i++) { const pg = await doc.getPage(i); const tc = await pg.getTextContent(); out += tc.items.map(x => x.str).join(" ") + "\n\n"; }
+    return out;
+  }
+  if (n.endsWith(".docx")) {
+    if (!window.mammoth) await new Promise((ok, no) => { const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); });
+    return (await window.mammoth.extractRawText({ arrayBuffer: await f.arrayBuffer() })).value;
+  }
+  return await f.text();
+}
+function chunkText(t){
+  const clean = t.replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  const out = []; let i = 0;
+  while (i < clean.length && out.length < 600) { let end = Math.min(clean.length, i + 1200); const cut = clean.lastIndexOf("\n", end); if (cut > i + 600) end = cut; out.push(clean.slice(i, end).trim()); i = end - 120 > i ? end - 120 : end; }
+  return out.filter(x => x.length > 30);
+}
+async function showLibrary(msg){
+  const { data: docs } = await sb.from("user_docs").select("id,name,chars,created_at").order("created_at", { ascending: false });
+  openModal(`<h3>📚 مكتبتي</h3><div class="sub">ارفع ملفاتك (PDF، وورد، نص)، ويار يجاوب منها لمن تسأله. الملفات إلك بس، محد غيرك يشوفها.</div>
+    <label class="primary" style="display:block;text-align:center;cursor:pointer">➕ ارفع ملف<input type="file" id="libFile" accept=".pdf,.docx,.txt,.md,.csv" multiple hidden></label>
+    <div class="msg" id="libMsg">${msg || ""}</div>
+    <div>${(docs || []).map(d => `<div class="row"><div class="t"><span class="em">📄 ${esc(d.name)}</span><button class="no" data-del="${d.id}" style="width:auto;padding:4px 10px">مسح</button></div><div style="color:var(--muted)">${(d.chars || 0).toLocaleString("ar-IQ")} حرف · ${dateAr(d.created_at)}</div></div>`).join("") || '<div class="sub">لهسه ما رفعت ملفات.</div>'}</div>
+    <div class="sub">بعد الرفع، اسأل يار عادي بالمحادثة، مثلاً: «شنو يگول الملف عن…؟»</div>`);
+  $("modalBody").querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { if (!confirm("تمسح هذا الملف من مكتبتك؟")) return; await sb.from("user_docs").delete().eq("id", b.dataset.del); showLibrary("انمسح ✓"); });
+  $("libFile").onchange = async e => {
+    const files = [...e.target.files]; const m = $("libMsg");
+    for (const f of files) {
+      if (f.size > 25e6) { m.textContent = `«${f.name}» كبير هواية (أكثر من ٢٥ ميگا)`; continue; }
+      try {
+        m.textContent = `⏳ يقرا «${f.name}»…`;
+        const text = await fileToText(f);
+        const parts = chunkText(text);
+        if (!parts.length) { m.textContent = `ما لگيت كتابة بـ«${f.name}». إذا هو صور ممسوحة، دزه بالمحادثة كصورة.`; continue; }
+        const { data: d, error } = await sb.from("user_docs").insert({ name: f.name.slice(0, 120), chars: text.length }).select("id").single();
+        if (error) { m.textContent = /الحد/.test(error.message) ? "وصلت الحد (٣٠ ملف)" : "ما انحفظ، جرّب مرة ثانية"; continue; }
+        for (let i = 0; i < parts.length; i += 50) {
+          m.textContent = `⏳ يحفظ «${f.name}»… ${Math.round(i * 100 / parts.length).toLocaleString("ar-IQ")}٪`;
+          const { error: e2 } = await sb.from("doc_chunks").insert(parts.slice(i, i + 50).map((c, j) => ({ doc_id: d.id, idx: i + j, content: c })));
+          if (e2) { m.textContent = "المكتبة امتلت، امسح ملفات قديمة"; break; }
+        }
+      } catch (err) { logErr(err?.message || err, "library"); m.textContent = `ما كدرت أقرا «${f.name}»`; }
+    }
+    showLibrary("✓ انضافت الملفات لمكتبتك");
+  };
+}
+$("libBtn").onclick = () => showLibrary();
 $("skillBtn").onclick = () => showSkills();
 $("fileIn").onchange = async () => {
   for (const f of [...$("fileIn").files].slice(0, 4 - ATT.length)) {
@@ -1461,7 +1515,7 @@ const { data: { session } } = await sb.auth.getSession(); render(session);
 /* ===== زر + : كل الخصائص بقائمة وحدة ===== */
 $("plusBtn").onclick = e => { e.stopPropagation(); const o = $("plusMenu").classList.toggle("open"); $("plusBtn").classList.toggle("open", o); };
 document.addEventListener("click", e => { if (!e.target.closest(".plusWrap")) { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); } });
-["skillBtn","attBtn","imgBtn","resBtn","thinkBtn","micBtn","callBtn"].forEach(id => $(id).addEventListener("click", () => { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); setTimeout(refreshActive, 0); }));
+["skillBtn","attBtn","imgBtn","resBtn","thinkBtn","micBtn","callBtn","libBtn"].forEach(id => $(id).addEventListener("click", () => { $("plusMenu").classList.remove("open"); $("plusBtn").classList.remove("open"); setTimeout(refreshActive, 0); }));
 function refreshActive(){
   const items = [];
   if (curCat !== "general") items.push([$("catLabel").textContent, () => { curCat = "general"; setCatLabel(); if (!convId) welcome(); }]);
