@@ -7,6 +7,16 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const MODELS = (Deno.env.get("GEMINI_MODELS") ?? "gemini-3.5-flash,gemini-3.8-flash,gemini-flash-latest,gemini-3.5-flash-lite").split(",");
+const BUILDER = `أنت هسة بوضع «البنّاء» (مطوّر ومصمم محترف). المستخدم يريد موقع أو برنامج أو لعبة أو أداة تشتغل فعلاً.
+- اكتب ملف HTML واحد كامل يشتغل لوحده (CSS و JavaScript داخله) داخل كتلة واحدة \`\`\`html ... \`\`\`.
+- قبل الكود: سطر واحد شنو سويت. بعد الكود: ٣ اقتراحات قصيرة للتطوير. لا تشرح الكود.
+- إذا المحتوى عربي: dir="rtl" lang="ar" وخط Cairo من Google Fonts. تصميم عصري ونظيف بمستوى المواقع العالمية (مسافات مريحة، ظلال ناعمة، زوايا دائرية، ألوان متناسقة، حركة خفيفة)، ويشتغل على الموبايل أول شي.
+- كل زر وكل وظيفة لازم تشتغل فعلاً بالجافاسكربت. ممنوع «قريباً» أو أزرار فارغة أو كود ناقص أو «// باقي الكود».
+- البرامج (مخزون، حسابات، حجوزات، مهام...) تحفظ بياناتها بـ localStorage حتى تبقى بعد الإغلاق، ويها بحث وإضافة وتعديل وحذف وتصدير.
+- مكتبات خارجية فقط من CDN مشهور (jsdelivr أو unpkg أو cdnjs). الصور: إيموجي أو SVG أو تدرجات، أو https://picsum.photos/seed/اسم/800/600 — لا تخترع روابط صور ثانية.
+- لا تخترع أرقام تلفون أو عناوين أو أسماء حقيقية؛ حط مكانها «رقمك هنا» وأمثالها.
+- بالأسفل سطر صغير: «صُنع بواسطة YAR AI».
+- إذا المستخدم طلب تعديل: رجّع الملف كامل بعد التعديل، مو بس الجزء اللي تغيّر.`;
 const HISTORY = 24;        // آخر رسائل تنرسل كاملة
 const MAX_MEMORIES = 80;   // أقصى عدد معلومات محفوظة لكل مستخدم
 
@@ -18,7 +28,12 @@ const PERSONA = `إنت "يار" (YAR AI)، مساعد ذكاء اصطناعي �
 - استخدم اللي تعرفه عن المستخدم (من الذاكرة وملفه) بشكل طبيعي بدون ما تگول "حسب ذاكرتي".
 - لا تسأل المستخدم عن شي موجود بذاكرتك أو ملفه أبداً (اسمه، عمره، شغله، دراسته، مدينته، عائلته، تفضيلاته). استخدمه مباشرة.
 - إذا احتجت معلومة ناقصة حتى تجاوب زين، اسأل عنها مرة وحدة بس، وهي راح تنحفظ.
-- الأجوبة مرتبة وبدون حشو.`;
+- الأجوبة مرتبة وبدون حشو.
+- يار لكل العراقيين: الطالب والموظف والطبيب، والعامل والأسطة والفلاح والسايق وصاحب المحل والبيت، وحتى اللي ما يعرف يقرا ويكتب زين.
+- إذا المستخدم كتب كلام بسيط أو بيه أخطاء إملائية أو حچى بالصوت: جاوبه بكلمات سهلة جداً وجمل قصيرة، بدون مصطلحات أجنبية، وبخطوات مرقمة، كأنك تحچي ويا جارك. لا تصحح إملاءه ولا تحرجه، وانطيه أقصر جواب يفيده.
+- للأسطوات والعمال: تعرف الشغل العراقي (كهرباء بيوت ومولدات، سباكة، بناء ولبخ وكاشي وسيراميك، صبغ، تبريد وتكييف، نجارة، حدادة وألمنيوم، ميكانيك سيارات، زراعة). تساعدهم يحسبون المواد والكميات، ويكتبون عرض سعر أو قائمة حساب للزبون، ورسالة واتساب للزبون، ويصلحون الأعطال خطوة بخطوة ويا تنبيه السلامة (خصوصاً الكهرباء والغاز).
+- الفلوس بالدينار العراقي إلا إذا طلب دولار، وإذا الأسعار تتغير گول إنها تقريبية حسب السوق.
+- الشغل الثقيل (بحوث، دراسات جدوى، خطط عمل، تقارير طويلة، برامج): رتّبه بعناوين وأقسام وكمّله للآخر، لا توقف بالنص ولا تختصر المطلوب. الشغل المتوسط: مرتب ومباشر. السؤال البسيط: جواب قصير.`;
 
 const REVIEWER = `إنت مراجع جودة. راح توصلك رسالة المستخدم ومسودة الجواب.
 افحص: أخطاء المعلومات، الحسابات، المصادر المخترعة، الأخطاء الإملائية والنحوية، هل جاوب على السؤال كامل، هل اللغة مناسبة.
@@ -85,7 +100,7 @@ function toMsgs(system: string, contents: unknown[]) {
 }
 
 // بث الجواب كلمة كلمة من Gemini. إذا كل النماذج وكعت نرجع للاحتياطي (بدون بث)
-async function geminiStream(system: string, contents: unknown[], search: boolean, models: string[], onText: (t: string) => void) {
+async function geminiStream(system: string, contents: unknown[], search: boolean, models: string[], onText: (t: string) => void, o: CfOpts = {}) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("NO_KEY");
   let lastErr = "";
@@ -124,20 +139,21 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
   }
   markDown(dead, models);
   // احتياط سريع ويا بث: Cloudflare يكتب الجواب كلمة كلمة
-  const st = await cfStream(system, contents, onText);
+  const st = await cfStream(system, contents, onText, o) ?? (o.cfModel ? await cfStream(system, contents, onText, { maxTok: o.maxTok ? 6000 : undefined }) : null);
   if (st) return st;
   const t = await fallbackLLM(system, contents, false, lastErr);
   onText(t);
   return t;
 }
 
-async function cfStream(system: string, contents: unknown[], onText: (t: string) => void): Promise<string | null> {
+type CfOpts = { cfModel?: string; maxTok?: number };
+async function cfStream(system: string, contents: unknown[], onText: (t: string) => void, o: CfOpts = {}): Promise<string | null> {
   const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
   if (!cfAcc || !cfTok) return null;
   try {
-    const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/${Deno.env.get("CF_TEXT_MODEL") ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast"}`, {
-      method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(60000),
-      body: JSON.stringify({ messages: toMsgs(system, contents), max_tokens: 2500, temperature: 0.6, stream: true }) });
+    const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAcc}/ai/run/${o.cfModel ?? Deno.env.get("CF_TEXT_MODEL") ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast"}`, {
+      method: "POST", headers: { Authorization: `Bearer ${cfTok}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(o.maxTok ? 150000 : 60000),
+      body: JSON.stringify({ messages: toMsgs(system, contents), max_tokens: o.maxTok ?? 2500, temperature: o.maxTok ? 0.3 : 0.6, stream: true }) });
     if (!r.ok || !r.body) { console.error("cf stream", r.status); return null; }
     const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "", full = "";
@@ -287,7 +303,7 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "سجّل دخول أول" }, 401);
 
-    const { conversation_id, message, category, files, mode, think, stream, skill_id } = await req.json();
+    const { conversation_id, message, category, files, mode, think, stream, skill_id, build: body_build } = await req.json();
     const text = String(message ?? "").trim().slice(0, 12000);
     if (!text && !(Array.isArray(files) && files.length)) return json({ error: "الرسالة فارغة" }, 400);
 
@@ -363,7 +379,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    const contents = (hist ?? []).reverse().map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+    // ===== وضع البنّاء: مواقع وبرامج وألعاب كاملة بملف HTML واحد =====
+    const lastAi = (hist ?? []).find((m) => m.role === "assistant")?.content ?? "";
+    const prevHtml = lastAi.match(/```html\s*([\s\S]*?)```/i)?.[1]?.trim() ?? "";
+    const askBuild = /(سوي|سوّي|اعمل|ابني|ابنِ|صمم|صمّم|برمج|كوّد|اكتب.{0,8}كود|انشئ|أنشئ|build|make|create)/i.test(text)
+      && /(موقع|صفحة|صفحه|برنامج|تطبيق|لعبة|لعبه|داشبورد|لوحة تحكم|حاسبة|نظام|متجر|استمارة|فورم|بورتفوليو|landing|website|web ?app|app|game|dashboard)/i.test(text);
+    const askEdit = !!prevHtml && /(غيّر|غير|بدّل|بدل|ضيف|أضف|اضف|شيل|احذف|خلي|خلّي|كبّر|صغّر|لون|عدّل|عدل|صلّح|صلح|زيد|حسّن|حسن|زر|قسم|خط|ترتيب|صورة|نص|رجّع|طوّر|طور)/.test(text);
+    const buildMode = !!body_build || askBuild || askEdit;
+    if (buildMode) {
+      system += `\n\n${BUILDER}` + (prevHtml && (askEdit || body_build) ? `\n\nهذا الملف الحالي (آخر نسخة سويتها). طبّق طلب المستخدم عليه ورجّع الملف كامل:\n\`\`\`html\n${prevHtml.slice(0, 60000)}\n\`\`\`` : "");
+    }
+
+    const histUse = buildMode
+      ? (hist ?? []).slice(0, 4).reverse().map((m) => ({ ...m, content: String(m.content).replace(/```html[\s\S]*?```/gi, "[ملف الموقع — موجود فوق]").slice(0, 1500) }))
+      : (hist ?? []).reverse();
+    const contents = histUse.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
     const att = (Array.isArray(files) ? files : []).slice(0, 4).filter((f: { mime?: string; data?: string }) => f?.mime && f?.data && f.data.length < 11_000_000);
     // روابط يوتيوب: Gemini يشوف الفيديو نفسه ويلخصه
     const yt = [...new Set((text.match(/https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/|live\/)|youtu\.be\/)[\w-]{6,}[^\s]*/g) ?? []))].slice(0, 1);
@@ -390,7 +420,7 @@ Deno.serve(async (req) => {
     if (deep) sys += `\n\nوضع التفكير العميق مفعّل: حلّل السؤال خطوة بخطوة بينك وبين نفسك، تأكد من كل رقم ومعلومة، وفكّر بالاحتمالات قبل ما تجاوب. اكتب الجواب النهائي مرتب ومفصّل وبدون ما تعرض خطوات تفكيرك الداخلية.`;
     const imgs = att.filter((f: { mime: string }) => f.mime.startsWith("image/"));
     if (imgs.length) sys += `\n\nالمستخدم رفع صورة. تكدر تشوفها وتحللها وتوصفها وتطلع النص منها. إذا طلب تعديل الصورة نفسها (حذف خلفية، تغيير لون، إضافة كتابة...) گله يضغط علامة + ويشغّل زر 🎨 «صورة»، ويرفع صورته ويكتب التعديل اللي يريده، ويار يعدّلها خلال ثواني.`;
-    const useSearch = !yt.length && !att.length; // ويا الملفات نخلي البحث حتى يكون الجواب أسرع وما يعلّق
+    const useSearch = !yt.length && !att.length && !buildMode; // ويا الملفات نخلي البحث حتى يكون الجواب أسرع وما يعلّق
     const expertModels = (Deno.env.get("EXPERT_MODELS") ?? "anthropic/claude-sonnet-4.5,x-ai/grok-4").split(",");
 
     // يولّد الجواب (ببث أو بدون) ويرجع النص الكامل
@@ -403,7 +433,7 @@ Deno.serve(async (req) => {
         // ما اشتغل أي نموذج خبير: نرجّع النقاط
         if (expertPaidPoints) { await admin.rpc("refund_points", { p_user: user.id, p_amount: 3, p_reason: "إرجاع: الخبير ما اشتغل" }).then(() => {}, () => {}); expertPaidPoints = false; }
       }
-      if (onText) return await geminiStream(sys, contents, useSearch, gModels, onText);
+      if (onText) return await geminiStream(sys, contents, useSearch, gModels, onText, buildMode ? { cfModel: "@cf/qwen/qwen2.5-coder-32b-instruct", maxTok: 7500 } : {});
       let draft = await gemini(sys, contents, false, useSearch, gModels);
       if (plan?.review) {
         try { draft = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `الفئة: ${catRow?.name}\nرسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]); } catch { /* نخلي المسودة */ }

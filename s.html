@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>موقع من YAR AI</title>
+<style>html,body{margin:0;height:100%;font-family:system-ui,Tahoma,sans-serif;background:#111;color:#eee}
+iframe{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff}
+#m{display:flex;height:100%;align-items:center;justify-content:center;flex-direction:column;gap:10px;text-align:center;padding:20px}
+#m a{color:#93c5fd}</style></head>
+<body><div id="m">⏳ دا يفتح…</div>
+<script>
+(async () => {
+  const URL_ = "https://wnjhsgjctevpaftvlcyr.supabase.co", KEY = "sb_publishable_qKc7vKrYAyUe0trChcVZuA_p-bBSubV";
+  const id = new URLSearchParams(location.search).get("id") || "";
+  const m = document.getElementById("m");
+  const fail = (t) => m.innerHTML = `${t}<br><a href="./">سوّي موقعك ويا YAR AI</a>`;
+  if (!/^[a-z0-9]{6,20}$/.test(id)) return fail("الرابط مو صحيح");
+  try {
+    const h = { apikey: KEY, Authorization: "Bearer " + KEY };
+    const r = await fetch(`${URL_}/rest/v1/sites?id=eq.${id}&select=title,html`, { headers: h });
+    const [row] = await r.json();
+    if (!row) return fail("هذا الموقع ما موجود أو انمسح");
+    document.title = row.title;
+    fetch(`${URL_}/rest/v1/rpc/site_view`, { method: "POST", headers: { ...h, "Content-Type": "application/json" }, body: JSON.stringify({ p_id: id }) }).catch(() => {});
+    // الموقع يشتغل بصندوق معزول، وبياناته تنحفظ بهذا المتصفح
+    const KEYS = "yarsite:" + id;
+    let data = {}; try { data = JSON.parse(localStorage.getItem(KEYS) || "{}"); } catch {}
+    const shim = `<script>(function(){var d=${JSON.stringify(data).replace(/</g, "\\u003c")};function p(m){try{parent.postMessage(Object.assign({yarStore:1},m),"*")}catch(e){}}
+var s={getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},setItem:function(k,v){d[String(k)]=String(v);p({k:String(k),v:String(v)})},removeItem:function(k){delete d[String(k)];p({k:String(k),del:1})},clear:function(){d={};p({clear:1})},key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(d).length}};
+try{Object.defineProperty(window,"localStorage",{value:s,configurable:true})}catch(e){}try{Object.defineProperty(window,"sessionStorage",{value:s,configurable:true})}catch(e){}})();<\/script>`;
+    const html = /<head[^>]*>/i.test(row.html) ? row.html.replace(/<head[^>]*>/i, x => x + shim) : shim + row.html;
+    const f = document.createElement("iframe");
+    f.setAttribute("sandbox", "allow-scripts allow-forms allow-modals allow-popups allow-downloads");
+    f.srcdoc = html; m.remove(); document.body.appendChild(f);
+    addEventListener("message", e => {
+      if (e.source !== f.contentWindow || !e.data?.yarStore) return;
+      if (e.data.clear) data = {}; else if (e.data.del) delete data[e.data.k]; else data[e.data.k] = e.data.v;
+      const j = JSON.stringify(data); if (j.length < 3000000) try { localStorage.setItem(KEYS, j); } catch {}
+    });
+  } catch { fail("صار خلل بالاتصال، جرّب مرة ثانية"); }
+})();
+</script></body></html>
