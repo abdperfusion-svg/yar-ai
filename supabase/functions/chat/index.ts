@@ -136,9 +136,24 @@ function toClaude(contents: unknown[]) {
   while (out.length && out[0].role !== "user") out.shift();
   return out;
 }
-async function claudeStream(system: string, contents: unknown[], onText: (t: string) => void, model = CLAUDE_FAST, maxTok = 8000): Promise<string | null> {
+// ميزانية Claude: الشهر كله مقسوم على الأيام الباقية، ولكل مستخدم حد يومي
+// deno-lint-ignore no-explicit-any
+type Gate = { admin: any; user: string };
+const MONTH_CAP = Number(Deno.env.get("CLAUDE_MONTHLY_USD") ?? "95");
+const USER_DAY_CAP = Number(Deno.env.get("CLAUDE_USER_DAILY_USD") ?? "0.06");
+// التكلفة بالمايكرو دولار = عدد التوكنات × السعر لكل مليون
+function claudeMicro(model: string, inTok: number, outTok: number) {
+  let pi = 0.1, po = 0.5;
+  if (/sonnet/.test(model)) { pi = 2; po = 10; } else if (/opus/.test(model)) { pi = 4; po = 20; } else if (inTok > 100000) { pi = 0.5; po = 2.5; }
+  return Math.ceil(inTok * pi + outTok * po);
+}
+async function claudeStream(system: string, contents: unknown[], onText: (t: string) => void, model = CLAUDE_FAST, maxTok = 8000, gate?: Gate): Promise<string | null> {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   if (!key) return null;
+  if (gate) {
+    const { data: ok, error } = await gate.admin.rpc("claude_allowed", { p_user: gate.user, p_user_cap: USER_DAY_CAP, p_month_cap: MONTH_CAP });
+    if (error || ok !== true) { console.log("claude skip budget", error?.message ?? ""); return null; }
+  }
   try {
     const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 30000);
     const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: ac.signal,
@@ -164,7 +179,9 @@ async function claudeStream(system: string, contents: unknown[], onText: (t: str
         } catch { /* */ }
       }
     }
-    console.log("claude ok", model, "in", inTok, "out", outTok);
+    const micro = claudeMicro(model, inTok, outTok);
+    console.log("claude ok", model, "in", inTok, "out", outTok, "usd", micro / 1e6);
+    if (gate) await gate.admin.rpc("claude_spend_add", { p_user: gate.user, p_micro: micro }).then(() => {}, () => {});
     return full.trim() ? full : null;
   } catch (e) { console.error("claude", model, String(e)); return null; }
 }
@@ -174,7 +191,7 @@ async function smartStream(system: string, contents: unknown[], search: boolean,
   // يوتيوب أو سؤال يحتاج بحث: Gemini أول، وبعدين Claude
   const geminiFirst = o.yt || (search && NEEDS_WEB.test(o.text ?? ""));
   if (!geminiFirst && Deno.env.get("ANTHROPIC_API_KEY")) {
-    const t = await claudeStream(system, contents, onText, CLAUDE_FAST, o.maxTok ? 16000 : 8000);
+    const t = await claudeStream(system, contents, onText, CLAUDE_FAST, o.maxTok ? 16000 : 8000, o.gate);
     if (t) return t;
   }
   return await geminiStream(system, contents, search, models, onText, o);
@@ -224,7 +241,7 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
   }
   markDown(dead, models);
   {
-    const ct = await claudeStream(system, contents, onText, CLAUDE_FAST, o.maxTok ? 16000 : 8000);
+    const ct = await claudeStream(system, contents, onText, CLAUDE_FAST, o.maxTok ? 16000 : 8000, o.gate);
     if (ct) return ct;
   }
   if (o.alt) contents = o.alt; // العقول الاحتياطية تاخذ نص الملفات
@@ -247,7 +264,7 @@ async function geminiStream(system: string, contents: unknown[], search: boolean
   return t;
 }
 
-type CfOpts = { cfModel?: string; maxTok?: number; alt?: unknown[] };
+type CfOpts = { cfModel?: string; maxTok?: number; alt?: unknown[]; gate?: Gate };
 async function cfStream(system: string, contents: unknown[], onText: (t: string) => void, o: CfOpts = {}): Promise<string | null> {
   const cfAcc = Deno.env.get("CF_ACCOUNT_ID"), cfTok = Deno.env.get("CF_API_TOKEN");
   if (!cfAcc || !cfTok) return null;
@@ -584,11 +601,12 @@ Deno.serve(async (req) => {
     const expertModels = (Deno.env.get("EXPERT_MODELS") ?? "anthropic/claude-sonnet-4.5,x-ai/grok-4").split(",");
 
     // يولّد الجواب (ببث أو بدون) ويرجع النص الكامل
+    const gate: Gate = { admin, user: user.id };
     const generate = async (onText?: (t: string) => void) => {
       LAST_SOURCES = [];
       if (md === "expert") {
         if (Deno.env.get("ANTHROPIC_API_KEY")) {
-          const t = onText ? await claudeStream(sys, contents, onText, CLAUDE_EXPERT, 16000) : await claudeStream(sys, contents, () => {}, CLAUDE_EXPERT, 16000);
+          const t = await claudeStream(sys, contents, onText ?? (() => {}), CLAUDE_EXPERT, 16000, gate);
           if (t) return t;
         }
         for (const m of expertModels) {
@@ -597,7 +615,7 @@ Deno.serve(async (req) => {
         // ما اشتغل أي نموذج خبير: نرجّع النقاط
         if (expertPaidPoints) { await admin.rpc("refund_points", { p_user: user.id, p_amount: 3, p_reason: "إرجاع: الخبير ما اشتغل" }).then(() => {}, () => {}); expertPaidPoints = false; }
       }
-      if (onText) return await smartStream(sys, contents, useSearch, gModels, onText, { ...(buildMode ? { cfModel: "@cf/qwen/qwen2.5-coder-32b-instruct", maxTok: 7500 } : {}), alt: altContents, yt: yt.length > 0, text });
+      if (onText) return await smartStream(sys, contents, useSearch, gModels, onText, { ...(buildMode ? { cfModel: "@cf/qwen/qwen2.5-coder-32b-instruct", maxTok: 7500 } : {}), alt: altContents, yt: yt.length > 0, text, gate });
       let draft = await gemini(sys, contents, false, useSearch, gModels);
       if (plan?.review) {
         try { draft = await gemini(REVIEWER, [{ role: "user", parts: [{ text: `الفئة: ${catRow?.name}\nرسالة المستخدم:\n${text}\n\nالمسودة:\n${draft}` }] }]); } catch { /* نخلي المسودة */ }
