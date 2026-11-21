@@ -1452,6 +1452,8 @@ const CONNECTORS = [
   { id:"telegram", icon:"✈️", name:"تلكرام", desc:"يار يدزلك الأجوبة والصور لتلكرام، وتحچي ويا يار من هناك" },
   { id:"notion", icon:"📝", name:"نوشن", desc:"يار يكتب ملاحظاتك وخططك بصفحات نوشن ويقراها" },
   { id:"canva", icon:"🎨", name:"كانفا", desc:"يار يفتحلك تصاميم بكانفا ويرفع الصور لحسابك" },
+  { id:"magnific", icon:"🖼️", name:"ماجنيفيك", desc:"يار يرسم صورك بحسابك بماجنيفيك (صور مجانية كل يوم حسب حسابك)، ويكتب عليها العربي" },
+  { id:"higgsfield", icon:"🎬", name:"Higgsfield", desc:"إذا عندك اشتراك بـ Higgsfield، يار يرسم بحسابك ومن رصيدك" },
 ];
 async function showConnections(){
   const { data } = await sb.from("user_connections").select("id,provider,account_label,created_at");
@@ -1471,7 +1473,7 @@ async function showConnections(){
       $("connMsg").innerHTML = `افتح بوت يار بتلكرام ودز هذا الكود:<br><b style="font-size:22px;letter-spacing:3px">${code}</b><br>${link ? `<a class="primary" style="display:inline-block;margin-top:8px;padding:8px 18px;text-decoration:none" href="${link}" target="_blank">✈️ افتح تلكرام واربط</a>` : ""}<br><small>الكود يشتغل ١٥ دقيقة. بعد ما تربط سكّر وافتح هالصفحة.</small>`;
       return;
     }
-    const { data: r, error } = await sb.functions.invoke("connect", { body: { provider: pv } });
+    const { data: r, error } = await sb.functions.invoke(["magnific","higgsfield"].includes(pv) ? "mcp-link" : "connect", { body: { provider: pv, action: "start" } });
     if (error || !r?.url) { let m = "صار خلل، جرّب مرة ثانية"; try { m = (await error.context.json()).error || m; } catch {} $("connMsg").textContent = m; b.disabled = false; return; }
     location.href = r.url;
   });

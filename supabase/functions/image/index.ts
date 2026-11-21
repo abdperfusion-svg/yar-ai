@@ -242,9 +242,23 @@ Deno.serve(async (req) => {
       bytes = await editImage(ref, text, spec.prompt);
       if (!bytes) note = "\n\n_ما كدرت أعدّل صورتك نفسها هسه، فسويتلك صورة جديدة بنفس الوصف._";
     }
+    // إذا المستخدم رابط حسابه بماجنيفيك أو Higgsfield: نرسم بحسابه هو (من رصيده، وببلاش علينا)
+    let linkedNote = "";
+    if (!hasRef && !identity) {
+      const { data: links } = await admin.from("user_connections").select("provider").eq("user_id", user.id).in("provider", ["magnific", "higgsfield"]);
+      const pv = links?.find((l) => l.provider === "magnific")?.provider ?? links?.[0]?.provider;
+      if (pv) {
+        const r = await fetch(`${url}/functions/v1/mcp-link`, { method: "POST", signal: T(140000), headers: { "Content-Type": "application/json", "x-yar-internal": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}` },
+          body: JSON.stringify({ action: "generate", provider: pv, user_id: user.id, prompt: spec.prompt, aspect: spec.aspect }) }).catch(() => null);
+        const j = r ? await r.json().catch(() => null) : null;
+        if (j?.image) { const f = await fetch(j.image).catch(() => null); if (f?.ok) { bytes = new Uint8Array(await f.arrayBuffer()); linkedNote = `\n\n_انرسمت بحسابك بـ${pv === "magnific" ? "ماجنيفيك" : "Higgsfield"}._`; } }
+        else if (j?.error) linkedNote = `\n\n_${j.error}، فرسمتها بيار._`;
+      }
+    }
+    note += linkedNote;
     // التصميم الاحترافي: الشعار من Recraft، والبوستر من Nano Banana. مجاني للمشتركين، والباقين بالنقاط
     let isSvg = false, proPaid = 0, proNote = "";
-    const wantPro = !hasRef && ((identity && !!Deno.env.get("RECRAFT_API_KEY")) || (design && Deno.env.get("GEMINI_IMAGES") === "1"));
+    const wantPro = !bytes && !hasRef && ((identity && !!Deno.env.get("RECRAFT_API_KEY")) || (design && Deno.env.get("GEMINI_IMAGES") === "1"));
     if (wantPro) {
       const { data: ch } = await admin.rpc("pro_charge", { p_user: user.id, p_kind: identity ? "logo" : "poster" });
       if (ch?.ok) {
